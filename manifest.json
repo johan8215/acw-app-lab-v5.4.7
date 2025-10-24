@@ -1,0 +1,13 @@
+{
+  "name": "JAG15 | Allston Car Wash (Lab)",
+  "short_name": "JAG15 ACW Lab",
+  "description": "Blue Glass White Edition v5.4.7 — Lab Build by Johan A. Giraldo (JAG15)",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#0b2e59",
+  "theme_color": "#0b2e59",
+  "orientation": "portrait",
+  "icons": [
+    { "src": "acw-icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JAG15 | Allston Car Wash (Lab)</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" type="image/png" href="acw-icon-512.png">
+</head>
+<body>
+  <div id="app">
+    <div id="login" class="login-screen">
+      <h2>Allston Car Wash (Lab)</h2>
+      <input id="email" type="email" placeholder="Email" />
+      <input id="password" type="password" placeholder="Password" />
+      <button onclick="loginUser()">Sign In</button>
+      <p id="diag" class="diag"></p>
+    </div>
+
+    <div id="welcome" class="hidden">
+      <h3 id="welcomeName"></h3>
+      <p id="welcomeRole"></p>
+      <div id="schedule"></div>
+    </div>
+  </div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

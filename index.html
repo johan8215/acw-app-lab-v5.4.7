@@ -72,5 +72,16 @@
         .catch(err => console.warn('SW registration failed:', err));
     }
   </script>
+
+  <!-- 🔔 OneSignal Web Push Integration -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<script>
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "f10e759e-3d52-4b41-a70f-0b11444288c8",
+    });
+  });
+</script>
 </body>
 </html>

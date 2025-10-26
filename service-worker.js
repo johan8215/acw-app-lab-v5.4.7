@@ -1,39 +1,49 @@
-/* ============================================================
-   ⚙️ SERVICE WORKER — ACW-App Blue Glass White Edition
-   Silent cache, no popup
-   ============================================================ */
+// ===========================================================
+// 🧩 ACW-App Service Worker v5.6.2 — Fixed Offline & Cache
+// ===========================================================
 
-const CACHE_NAME = "acw-blue-glass-v472";
-const ASSETS = [
+const CACHE_NAME = "acw-cache-v5.6.2";
+const FILES_TO_CACHE = [
   "./",
   "./index.html",
   "./style.css",
   "./app.js",
   "./config.js",
-  "./manifest.json",
-  "./acw-icon-512.png"
+  "./manifest.json"
 ];
 
-self.addEventListener("install", e => {
-  e.waitUntil(
-    caches.open(CACHE_NAME).then(cache => {
-      console.log("📦 Caching assets");
-      return cache.addAll(ASSETS);
+// 🧱 Instalar y cachear recursos básicos
+self.addEventListener("install", (event) => {
+  console.log("🪣 Installing ACW Service Worker...");
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(FILES_TO_CACHE))
+  );
+});
+
+// 🧼 Activar y limpiar cachés antiguas
+self.addEventListener("activate", (event) => {
+  console.log("♻️ Activating new cache version");
+  event.waitUntil(
+    caches.keys().then((keys) =>
+      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
+    )
+  );
+});
+
+// 🌐 Fetch con fallback y protección
+self.addEventListener("fetch", (event) => {
+  const req = event.request;
+
+  // ⚠️ No interceptar las llamadas al backend
+  if (req.url.includes("script.google.com/macros")) return;
+
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      return cached || fetch(req).catch(() =>
+        new Response("Offline or not found", { status: 404 })
+      );
     })
   );
 });
 
-self.addEventListener("fetch", e => {
-  e.respondWith(
-    caches.match(e.request).then(res => res || fetch(e.request))
-  );
-});
-
-self.addEventListener("activate", e => {
-  e.waitUntil(
-    caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
-    )
-  );
-  console.log("♻️ Old cache cleared");
-});
+console.log("✅ ACW Service Worker v5.6.2 active");

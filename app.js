@@ -1,872 +1,517 @@
 /* ============================================================
-   🧠 ACW-App v5.5.3 — Blue Glass White Edition (Stable Live Totals)
-   Johan A. Giraldo (JAG15) & Sky — October 2025
+   🧠 ACW-App v5.6.2 — Blue Glass White Connected
+   Johan A. Giraldo (JAG15) & Sky — Oct 2025
    ============================================================
-   ✅ Mejoras incluidas:
-   - FIX: Cálculo en vivo del total semanal sin duplicar horas.
-   - Añadido dataset.baseHours → suma visual precisa (+x.x).
-   - Limpieza automática al cerrar turno (🕓 se detiene).
-   - Mantiene sincronía entre Team View y Employee Modal.
-   - Optimización visual estable en cronómetro + total.
+   - Login conectado a GAS (login, getSmartSchedule, directory)
+   - Dashboard: welcome + schedule + live hours + total estable
+   - Team View (manager/supervisor) + Employee Modal
+   - Envíos sendtoday / sendtomorrow (fallback simple)
+   - Change password
+   - Restauración de sesión + toasts
    ============================================================ */
 
 let currentUser = null;
-let scheduleData = null;
 
-/* ============================================================
-   🔐 LOGIN
-   ============================================================ */
+/* ============== helpers UI ============== */
+function $(sel, root=document){ return root.querySelector(sel); }
+function $all(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
+function isManagerRole(role){ return ["manager","supervisor"].includes(String(role||"").toLowerCase()); }
+
+function safeText(el, txt){ if(el) el.textContent = txt; }
+function setVisible(el, show){ if(!el) return; el.style.display = show ? "" : "none"; }
+
+/* ============== LOGIN ============== */
 async function loginUser() {
-  const email = document.getElementById("email").value.trim();
-  const password = document.getElementById("password").value.trim();
-  const diag = document.getElementById("diag");
-  const btn = document.querySelector("#login button");
+  const email = $("#email")?.value.trim();
+  const password = $("#password")?.value.trim();
+  const diag = $("#diag");
+  const btn = $("#signInBtn") || $("#login button");
 
-  if (!email || !password) {
-    diag.textContent = "Please enter your email and password.";
-    return;
-  }
+  if (!email || !password) { safeText(diag, "Please enter your email and password."); return; }
 
   try {
-    btn.disabled = true;
-    btn.innerHTML = "⏳ Loading your shift…";
-    btn.style.boxShadow = "0 0 20px rgba(0,136,255,0.8)";
-    diag.textContent = "Connecting to Allston Car Wash servers ☀️";
+    if (btn){ btn.disabled = true; btn.innerHTML = "⏳ Loading your shift…"; }
+    safeText(diag, "Connecting to Allston Car Wash servers ☀️");
 
-    const res = await fetch(
-      `${CONFIG.BASE_URL}?action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`
-    );
+    const res  = await fetch(`${CONFIG.BASE_URL}?action=login&email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`, {cache:"no-store"});
     const data = await res.json();
-    if (!data.ok) throw new Error("Invalid email or password.");
 
-    currentUser = data;
+    if (!data?.ok) throw new Error(data?.error || "Invalid email or password.");
+
+    currentUser = data; // {ok,name,email,role,week}
     localStorage.setItem("acwUser", JSON.stringify(data));
-    diag.textContent = "✅ Welcome, " + data.name + "!";
-    showWelcome(data.name, data.role);
+
+    safeText(diag, "✅ Welcome, " + data.name + "!");
+    await showWelcome(data.name, data.role);
     await loadSchedule(email);
-  } catch (err) {
-    diag.textContent = "❌ " + err.message;
+  } catch (e) {
+    safeText(diag, "❌ " + (e.message || "Login error"));
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = "Sign In";
-    btn.style.boxShadow = "none";
+    if (btn){ btn.disabled = false; btn.innerHTML = "Sign In"; }
   }
 }
 
-/* ============================================================
-   👋 SHOW WELCOME DASHBOARD — with delayed phone render
-   ============================================================ */
+/* ============== WELCOME DASHBOARD ============== */
 async function showWelcome(name, role) {
-  document.getElementById("login").style.display = "none";
-  document.getElementById("welcome").style.display = "block";
-  document.getElementById("welcomeName").innerHTML = `<b>${name}</b>`;
-  document.getElementById("welcomeRole").textContent = role;
+  setVisible($("#login"), false);
+  setVisible($("#welcome"), true);
+  $("#welcomeName").innerHTML = `<b>${name}</b>`;
+  safeText($("#welcomeRole"), role || "");
 
-  // Solo managers o supervisores ven el botón "Team View"
-  if (["manager", "supervisor"].includes(role.toLowerCase())) addTeamButton();
+  if (isManagerRole(role)) addTeamButton();
 
-  // 🔍 Buscar teléfono desde Employees list
+  // Inserta teléfono del usuario (si existe)
   try {
-    const res = await fetch(`${CONFIG.BASE_URL}?action=getEmployeesDirectory`);
-    const data = await res.json();
-
-    if (data.ok && data.directory) {
-      const match = data.directory.find(e =>
-        e.email?.toLowerCase() === (currentUser?.email || "").toLowerCase()
-      );
-
-      if (match && match.phone) {
-        setTimeout(() => {
-          const existing = document.querySelector(".user-phone");
-          if (existing) existing.remove();
-
-          // Teléfono clickeable con efecto azul
-          const phoneHTML = `<p class="user-phone">📞 <a href="tel:${match.phone}" style="color:#0078ff;text-decoration:none;font-weight:600;">${match.phone}</a></p>`;
-          const nameEl = document.getElementById("welcomeName");
-          if (nameEl) nameEl.insertAdjacentHTML("afterend", phoneHTML);
-        }, 300);
+    const r = await fetch(`${CONFIG.BASE_URL}?action=getEmployeesDirectory`, {cache:"no-store"});
+    const j = await r.json();
+    if (j.ok && Array.isArray(j.directory)) {
+      const self = j.directory.find(e => (e.email||"").toLowerCase() === (currentUser?.email||"").toLowerCase());
+      if (self?.phone) {
+        $(".user-phone")?.remove();
+        $("#welcomeName")?.insertAdjacentHTML("afterend",
+          `<p class="user-phone">📞 <a href="tel:${self.phone}" style="color:#0078ff;font-weight:600;text-decoration:none;">${self.phone}</a></p>`
+        );
       }
     }
-  } catch (err) {
-    console.warn("Could not load phone number:", err);
-  }
+  } catch {}
 }
 
-/* ============================================================
-   📅 LOAD SCHEDULE — with Auto Live Timer (v4.7.5)
-   ============================================================ */
+/* ============== LOAD SCHEDULE + LIVE ============== */
 async function loadSchedule(email) {
-  const schedDiv = document.getElementById("schedule");
+  const schedDiv = $("#schedule");
   schedDiv.innerHTML = `<p style="color:#007bff;font-weight:500;">Loading your shift...</p>`;
 
   try {
-    const res = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`);
-    const data = await res.json();
+    const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`, {cache:"no-store"});
+    const d = await r.json();
 
-    if (!data.ok || !data.days) {
+    if (!d.ok || !Array.isArray(d.days)) {
       schedDiv.innerHTML = `<p style="color:#c00;">No schedule found for this week.</p>`;
       return;
     }
 
-    // 🧾 Construir la tabla principal
-    let html = `
-      <table>
-        <tr><th>Day</th><th>Shift</th><th>Hours</th></tr>
-    `;
-
-    data.days.forEach(d => {
-      const isToday = new Date()
-        .toLocaleString("en-US", { weekday: "short" })
-        .toLowerCase()
-        .includes(d.name.slice(0, 3).toLowerCase());
-
-      html += `
-        <tr class="${isToday ? "today" : ""}">
-          <td>${d.name}</td>
-          <td>${d.shift || "-"}</td>
-          <td>${d.hours || "0"}</td>
-        </tr>`;
+    let html = `<table><tr><th>Day</th><th>Shift</th><th>Hours</th></tr>`;
+    d.days.forEach(day=>{
+      const isToday = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase() === day.name.slice(0,3).toLowerCase();
+      html += `<tr class="${isToday?"today":""}"><td>${day.name}</td><td>${day.shift||"-"}</td><td>${day.hours||"0"}</td></tr>`;
     });
-
-    html += `
-      </table>
-      <p class="total">Total Hours: <b>${data.total || 0}</b></p>
-    `;
+    html += `</table><p class="total">Total Hours: <b>${(d.total??0).toFixed?.(1) ?? d.total ?? 0}</b></p>`;
 
     schedDiv.innerHTML = html;
 
-    // ⏱️ Activar cronómetro 1 segundo después de mostrar la tabla
-    setTimeout(() => {
-      if (data.ok && data.days) {
-        startLiveTimer(data.days, Number(data.total || 0));
-      }
-    }, 1000);
+    // Arranca live 1s después para asegurar que el DOM esté
+    setTimeout(()=> startLiveTimer(d.days, Number(d.total||0)), 1000);
 
-  } catch (err) {
-    console.error("Error loading schedule:", err);
-    schedDiv.innerHTML = `<p style="color:#c00;">Error loading schedule. Please try again later.</p>`;
+  } catch (e) {
+    console.warn(e);
+    schedDiv.innerHTML = `<p style="color:#c00;">Error loading schedule.</p>`;
   }
 }
 
-/* ============================================================
-   ⚙️ SETTINGS + REFRESH
-   ============================================================ */
-function openSettings() {
-  document.getElementById("settingsModal").style.display = "block";
-}
-function closeSettings() {
-  document.getElementById("settingsModal").style.display = "none";
-}
-function refreshApp() {
-  closeSettings?.();
-  if ("caches" in window) caches.keys().then(names => names.forEach(n => caches.delete(n)));
-  const btn = document.querySelector(".settings-section button:first-child");
-  if (btn) {
-    btn.innerHTML = "⏳ Updating...";
-    btn.style.opacity = "0.7";
-  }
-  setTimeout(() => window.location.reload(true), 1200);
-}
-function logoutUser() {
-  localStorage.removeItem("acwUser");
-  closeSettings();
-  setTimeout(() => window.location.reload(true), 600);
-}
-
-/* ============================================================
-   ♻️ RESTORE SESSION
-   ============================================================ */
+/* ============== SESSION RESTORE ============== */
 window.addEventListener("load", () => {
-  const saved = localStorage.getItem("acwUser");
-  if (saved) {
-    const user = JSON.parse(saved);
-    currentUser = user;
-    showWelcome(user.name, user.role);
-    loadSchedule(user.email);
-  }
+  try {
+    const saved = localStorage.getItem("acwUser");
+    if (saved) {
+      currentUser = JSON.parse(saved);
+      showWelcome(currentUser.name, currentUser.role);
+      loadSchedule(currentUser.email);
+    }
+  } catch {}
 });
 
-/* ============================================================
-   ⏱️ ACW-App v5.3.6 — Live Shift + 🟢 Online Badge (Stable)
-   Johan A. Giraldo | Allston Car Wash © 2025
-   ============================================================ */
-function startLiveTimer(days, total) {
-  try {
-    // Buscar el día actual
-    const todayName = new Date().toLocaleString("en-US", { weekday: "short" }).slice(0,3).toLowerCase();
-   const today = days.find(d => d.name.slice(0,3).toLowerCase() === todayName);
-     console.log("🧭 Hoy detectado:", todayName, today);
-    if (!today || !today.shift || /off/i.test(today.shift)) return;
-
-    const shift = today.shift.trim();
-
-    // El badge 🟢 solo aparece si el turno está activo (7:30.)
-    removeOnlineBadge();
-
-    if (shift.endsWith(".")) {
-      addOnlineBadge();
-
-      const startStr = shift.replace(".", "").trim();
-      const startTime = parseTime(startStr);
-
-      const update = () => {
-        const now = new Date();
-        const diffHrs = Math.max(0, (now - startTime) / 36e5);
-        updateTotalDisplay(total + diffHrs, true);
-        showLiveHours(diffHrs, true);
-      };
-
-      update();
-      clearInterval(window.liveInterval);
-      window.liveInterval = setInterval(update, 60000);
-      return;
-    }
-
-    // Turno cerrado ("7:30 - 6") → sin cronómetro ni badge
-    const parts = shift.split("-");
-    if (parts.length < 2) return;
-
-    const startStr = parts[0].trim();
-    const endStr = parts[1].trim();
-    if (!startStr || !endStr) return;
-
-    const startTime = parseTime(startStr);
-    const endTime = parseTime(endStr);
-    const diffHrs = Math.max(0, (endTime - startTime) / 36e5);
-
-    updateTotalDisplay(total, false);
-    showLiveHours(diffHrs, false);
-    removeOnlineBadge();
-     // Mostrar también ⏱️ dentro de la tabla principal (o modal)
-const tableEl = document.querySelector("#schedule table") || document.querySelector(".schedule-mini");
-if (tableEl) injectLiveHoursInTable(days, tableEl);
-  } catch (err) {
-    console.warn("⏱️ Live shift inactive:", err);
-  }
+/* ============== LIVE TIMER (dashboard) ============== */
+function parseTime(str){
+  const clean = String(str||"").trim();
+  const m = clean.match(/^(\d{1,2})(?::(\d{1,2}))?\s*(am|pm)?$/i);
+  if(!m) return null;
+  let h = +m[1], min = +(m[2]||0), s = (m[3]||"").toLowerCase();
+  if (s==="pm" && h<12) h+=12;
+  if (s==="am" && h===12) h=0;
+  const d = new Date(); d.setHours(h, min, 0, 0); return d;
 }
-
-/* ============================================================
-   💡 LIVE HOURS + TOTAL
-   ============================================================ */
-function showLiveHours(hours, active = true) {
-  let el = document.querySelector(".live-hours");
+function updateTotalDisplay(value, active=false){
+  const totalEl = $(".total");
+  if (!totalEl || isNaN(value)) return;
+  const color = active? "#33a0ff":"#e60000";
+  totalEl.innerHTML = `<span style="color:${color}">⚪ Total Hours: <b>${value.toFixed(1)}</b></span>`;
+}
+function showLiveHours(hours, active=true){
+  let el = $(".live-hours");
   if (!el) {
     el = document.createElement("p");
     el.className = "live-hours";
-    el.style.fontSize = "1.1em";
-    el.style.marginTop = "6px";
-    el.style.textShadow = "0 0 10px rgba(0,120,255,0.4)";
-    document.querySelector("#schedule")?.appendChild(el);
+    el.style.fontSize="1.05em"; el.style.marginTop="6px"; el.style.textShadow="0 0 10px rgba(0,120,255,.35)";
+    $("#schedule")?.appendChild(el);
   }
-
-  if (!active) {
-    el.textContent = "";
-    return;
-  }
-
-  el.innerHTML = `⏱️ <b style="color:#33a0ff">${hours.toFixed(1)}h</b>`;
+  el.innerHTML = active ? `⏱️ <b style="color:#33a0ff">${hours.toFixed(1)}h</b>` : "";
 }
-
-function updateTotalDisplay(value, active = false) {
-  const totalEl = document.querySelector(".total");
-  if (!totalEl) return;
-
-  // Verificar si el valor es válido
-  if (isNaN(value) || value === null || value === undefined) {
-    console.warn("⚠️ Invalid total value, keeping previous total.");
-    return; // No actualizar si el valor no es válido
-  }
-
-  const current = totalEl.innerText.match(/[\d.]+/);
-  const currentVal = current ? parseFloat(current[0]) : 0;
-
-  // Solo actualizar si cambia realmente o si el texto está vacío
-  if (Math.abs(currentVal - value) > 0.01 || totalEl.textContent.trim() === "") {
-    const color = active ? "#33a0ff" : "#ffffff";
-    totalEl.innerHTML = `<span style="color:${color}">⚪ Total Hours: <b>${value.toFixed(1)}</b></span>`;
-  }
-}
-
-/* ============================================================
-   🟢 ONLINE BADGE (arriba del nombre)
-   ============================================================ */
-function addOnlineBadge() {
-  const nameEl = document.getElementById("welcomeName");
-  if (!nameEl || document.getElementById("onlineBadge")) return;
-
+function addOnlineBadge(){
+  if ($("#onlineBadge")) return;
   const badge = document.createElement("span");
-  badge.id = "onlineBadge";
-  badge.textContent = "🟢 Online";
-  badge.style.display = "block";
-  badge.style.fontWeight = "600";
-  badge.style.color = "#33ff66";
-  badge.style.textShadow = "0 0 10px rgba(51,255,102,0.5)";
-  badge.style.marginBottom = "6px";
-
-  nameEl.parentNode.insertBefore(badge, nameEl);
+  badge.id="onlineBadge"; badge.textContent="🟢 Online";
+  Object.assign(badge.style,{display:"block",fontWeight:"600",color:"#33ff66",textShadow:"0 0 10px rgba(51,255,102,.5)",marginBottom:"6px"});
+  $("#welcomeName")?.parentNode?.insertBefore(badge, $("#welcomeName"));
 }
+function removeOnlineBadge(){ $("#onlineBadge")?.remove(); }
 
-function removeOnlineBadge() {
-  document.getElementById("onlineBadge")?.remove();
-}
-
-/* ============================================================
-   🕓 Parsear hora AM/PM o 24h
-   ============================================================ */
-function parseTime(str) {
-  const clean = str.replace(/[^\d:apm]/gi, "").trim();
-  const [time, meridian] = clean.split(" ");
-  let [h, m] = (time || "").split(":").map(Number);
-  if (meridian?.toLowerCase() === "pm" && h !== 12) h += 12;
-  if (meridian?.toLowerCase() === "am" && h === 12) h = 0;
-  const d = new Date();
-  d.setHours(h, m || 0, 0, 0);
-  return d;
-}
-
-/* ============================================================
-   ⏱️ ACW-App v5.4.5 — Live Hours Visible in Table (Fixed)
-   Johan A. Giraldo | Allston Car Wash © 2025
-   ============================================================ */
-function injectLiveHoursInTable(days, tableEl) {
-  try {
-    const todayName = new Date()
-      .toLocaleString("en-US", { weekday: "short" })
-      .slice(0, 3)
-      .toLowerCase();
-    const today = days.find(
-      d => d.name.slice(0, 3).toLowerCase() === todayName
-    );
-    if (!today || !today.shift || /off/i.test(today.shift)) return;
+function startLiveTimer(days, total){
+  try{
+    const todayKey = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase();
+    const today = days.find(d=> d.name.slice(0,3).toLowerCase()===todayKey);
+    if(!today || !today.shift || /off/i.test(today.shift)) return;
 
     const shift = today.shift.trim();
-    const allRows = Array.from(tableEl.querySelectorAll("tr"));
-    const row = allRows.find(
-      r =>
-        r.cells[0]?.textContent.slice(0, 3).toLowerCase() === todayName
-    );
-    if (!row) return;
+    removeOnlineBadge();
 
-    const cellHours = row.cells[2];
-
-    // Turno activo ("7:30.")
+    // Turno activo estilo "7:30."
     if (shift.endsWith(".")) {
-      const startStr = shift.replace(".", "").trim();
-      const startTime = parseTime(startStr);
+      addOnlineBadge();
+      const startStr = shift.replace(/\.$/,"").trim();
+      const startTime = parseTime(startStr); if (!startTime) return;
 
-      const update = () => {
-        const now = new Date();
-        const diffHrs = Math.max(0, (now - startTime) / 36e5);
-        cellHours.innerHTML = `⏱️ ${diffHrs.toFixed(1)}h`;
-        cellHours.style.color = "#33a0ff";
-        cellHours.style.fontWeight = "600";
+      const tick = ()=>{
+        const diff = Math.max(0,(Date.now()-startTime.getTime())/36e5);
+        updateTotalDisplay(total+diff, true);
+        showLiveHours(diff, true);
+        // también pinta dentro de la tabla (Horas de hoy)
+        paintLiveInTable(todayKey, diff);
       };
-
-      update();
-      clearInterval(window.cellTimer);
-      window.cellTimer = setInterval(update, 60000);
+      tick();
+      clearInterval(window.__acwLiveTick__); window.__acwLiveTick__ = setInterval(tick, 60000);
+      return;
     }
-  } catch (err) {
-    console.warn("Live hours in table inactive:", err);
-  }
+
+    // Turno cerrado "7:30 - 6"
+    const p = shift.split("-"); if (p.length<2) return;
+    const a = parseTime(p[0].trim()), b = parseTime(p[1].trim());
+    if(!a || !b) return;
+    const diff = Math.max(0,(b-a)/36e5);
+    updateTotalDisplay(total,false);
+    showLiveHours(diff,false);
+    paintLiveInTable(todayKey, diff, /*static*/true);
+  }catch(e){ console.warn("Live error:", e); }
 }
 
-/* ============================================================
-   👋 SHOW WELCOME DASHBOARD — with delayed phone render
-   ============================================================ */
-async function showWelcome(name, role) {
-  document.getElementById("login").style.display = "none";
-  document.getElementById("welcome").style.display = "block";
-  document.getElementById("welcomeName").innerHTML = `<b>${name}</b>`;
-  document.getElementById("welcomeRole").textContent = role;
+function paintLiveInTable(todayKey, hours, staticMode=false){
+  const table = $("#schedule table"); if (!table) return;
+  const row = Array.from(table.rows).find(r=> r.cells?.[0]?.textContent.slice(0,3).toLowerCase()===todayKey);
+  if (!row) return;
+  row.cells[2].innerHTML = (staticMode? `` : `⏱️ `) + `${hours.toFixed(1)}h`;
+  row.cells[2].style.color = staticMode ? "#999" : "#33a0ff";
+  row.cells[2].style.fontWeight = staticMode ? "500" : "600";
+}
 
-  // Solo managers o supervisores ven el botón "Team View"
-  if (role === "manager" || role === "supervisor") addTeamButton();
+/* ============== SETTINGS ============== */
+function openSettings(){ setVisible($("#settingsModal"), true); }
+function closeSettings(){ setVisible($("#settingsModal"), false); }
+function openChangePassword(){ setVisible($("#changePasswordModal"), true); }
+function closeChangePassword(){ setVisible($("#changePasswordModal"), false); }
 
-  // 🔍 Buscar teléfono desde Employees list
+function refreshApp() {
+  try { if ("caches" in window) caches.keys().then(keys=>keys.forEach(k=>caches.delete(k))); } catch {}
+  toast("⏳ Updating…", "info");
+  setTimeout(()=>location.reload(), 900);
+}
+function logoutUser(){
+  localStorage.removeItem("acwUser");
+  toast("👋 Logged out", "info");
+  setTimeout(()=>location.reload(), 500);
+}
+
+/* ============== CHANGE PASSWORD ============== */
+async function submitChangePassword() {
+  const oldPass = $("#oldPass")?.value.trim();
+  const newPass = $("#newPass")?.value.trim();
+  const confirm = $("#confirmPass")?.value.trim();
+  const diag = $("#passDiag");
+
+  if (!oldPass || !newPass || !confirm) return safeText(diag, "⚠️ Please fill out all fields.");
+  if (newPass !== confirm)   return safeText(diag, "❌ New passwords do not match.");
+  if (newPass.length < 6)    return safeText(diag, "⚠️ Password must be at least 6 characters.");
+
   try {
-    const res = await fetch(`${CONFIG.BASE_URL}?action=getEmployeesDirectory`);
+    safeText(diag, "⏳ Updating password...");
+    const email = currentUser?.email;
+    if (!email) throw new Error("Session expired. Please log in again.");
+
+    const res = await fetch(`${CONFIG.BASE_URL}?action=changePassword&email=${encodeURIComponent(email)}&oldPass=${encodeURIComponent(oldPass)}&newPass=${encodeURIComponent(newPass)}`, {cache:"no-store"});
     const data = await res.json();
 
-    if (data.ok && data.directory) {
-      const match = data.directory.find(e =>
-        e.email?.toLowerCase() === (currentUser?.email || "").toLowerCase()
-      );
-
-      if (match && match.phone) {
-        setTimeout(() => {
-          const existing = document.querySelector(".user-phone");
-          if (existing) existing.remove();
-
-          // clickable + glow azul
-          const phoneHTML = `<p class="user-phone">📞 <a href="tel:${match.phone}" style="color:#0078ff;text-decoration:none;font-weight:600;">${match.phone}</a></p>`;
-          const nameEl = document.getElementById("welcomeName");
-          if (nameEl) nameEl.insertAdjacentHTML("afterend", phoneHTML);
-        }, 300);
-      }
+    if (data.ok) {
+      safeText(diag, "✅ Password updated successfully!");
+      toast("✅ Password updated", "success");
+      setTimeout(() => { closeChangePassword(); $("#oldPass").value = $("#newPass").value = $("#confirmPass").value = ""; }, 1200);
+    } else {
+      safeText(diag, "❌ " + (data.error || "Invalid current password."));
     }
   } catch (err) {
-    console.warn("Could not load phone number:", err);
+    safeText(diag, "⚠️ " + err.message);
   }
 }
 
-/* ============================================================
-   👥 TEAM VIEW — v5.5.2 (Centered + Live Column + Fast Open)
-   Johan A. Giraldo (JAG15) | Allston Car Wash © 2025
-   ============================================================ */
-
+/* ============== TEAM VIEW (gestión) ============== */
 const TEAM_PAGE_SIZE = 8;
-let __teamList = [];
-let __teamPage = 0;
+let __teamList=[], __teamPage=0;
 
-/* === Mostrar botón Team View solo a managers/supervisores === */
-function addTeamButton() {
-  if (document.getElementById("teamBtn")) return;
+function addTeamButton(){
+  if ($("#teamBtn")) return;
   const btn = document.createElement("button");
-  btn.id = "teamBtn";
-  btn.className = "team-btn";
-  btn.textContent = "Team View";
-  btn.onclick = toggleTeamOverview;
-  document.body.appendChild(btn);
+  btn.id="teamBtn"; btn.className="team-btn"; btn.textContent="Team View";
+  btn.onclick = toggleTeamOverview; document.body.appendChild(btn);
 }
-
-/* === Abrir/cerrar vista de equipo === */
-function toggleTeamOverview() {
-  const wrapper = document.getElementById("directoryWrapper");
-  if (wrapper) {
-    wrapper.classList.add("fade-out");
-    setTimeout(() => wrapper.remove(), 250);
-    return;
-  }
+function toggleTeamOverview(){
+  const w = $("#directoryWrapper");
+  if (w){ w.classList.add("fade-out"); setTimeout(()=>w.remove(), 220); return; }
   loadEmployeeDirectory();
 }
-
-/* === Cargar lista de empleados === */
-async function loadEmployeeDirectory() {
-  try {
-    const res = await fetch(`${CONFIG.BASE_URL}?action=getEmployeesDirectory`);
-    const data = await res.json();
-    if (!data.ok) return;
-    __teamList = data.directory || [];
-    __teamPage = 0;
-    renderTeamViewPage();
-  } catch (e) {
-    console.warn(e);
-  }
+async function loadEmployeeDirectory(){
+  try{
+    const r = await fetch(`${CONFIG.BASE_URL}?action=getEmployeesDirectory`, {cache:"no-store"});
+    const j = await r.json(); if (!j.ok) return;
+    __teamList = j.directory||[]; __teamPage=0; renderTeamViewPage();
+  }catch(e){ console.warn(e); }
 }
-
-/* === Renderizar tabla centrada con 3 columnas === */
-function renderTeamViewPage() {
-  document.getElementById("directoryWrapper")?.remove();
-
-  const box = document.createElement("div");
-  box.id = "directoryWrapper";
-  box.className = "directory-wrapper tv-wrapper";
-  box.style.display = "flex";
-  box.style.flexDirection = "column";
-  box.style.alignItems = "center";
-  box.style.justifyContent = "center";
-  box.style.animation = "fadeIn 0.3s ease";
+function renderTeamViewPage(){
+  $("#directoryWrapper")?.remove();
+  const box=document.createElement("div");
+  box.id="directoryWrapper"; box.className="directory-wrapper tv-wrapper";
+  box.style.display="flex"; box.style.flexDirection="column"; box.style.alignItems="center"; box.style.animation="fadeIn .25s ease";
   box.innerHTML = `
     <div class="tv-head">
       <h3 style="margin-bottom:6px;">Team View</h3>
       <button class="tv-close" onclick="toggleTeamOverview()">✖️</button>
     </div>
-
     <div class="tv-pager">
-      <button class="tv-nav" id="tvPrev" ${__teamPage===0?'disabled':''}>‹ Prev</button>
+      <button class="tv-nav" id="tvPrev" ${__teamPage===0?"disabled":""}>‹ Prev</button>
       <span class="tv-index">Page ${__teamPage+1} / ${Math.max(1, Math.ceil(__teamList.length/TEAM_PAGE_SIZE))}</span>
-      <button class="tv-nav" id="tvNext" ${(__teamPage+1)>=Math.ceil(__teamList.length/TEAM_PAGE_SIZE)?'disabled':''}>Next ›</button>
+      <button class="tv-nav" id="tvNext" ${(__teamPage+1)>=Math.ceil(__teamList.length/TEAM_PAGE_SIZE)?"disabled":""}>Next ›</button>
     </div>
-
-    <table class="directory-table tv-table" style="margin-top:10px;min-width:450px;text-align:center;">
+    <table class="directory-table tv-table" style="margin-top:10px;min-width:460px;text-align:center;">
       <tr><th>Name</th><th>Hours</th><th>Live (Working)</th><th></th></tr>
       <tbody id="tvBody"></tbody>
     </table>
   `;
   document.body.appendChild(box);
 
-  const start = __teamPage * TEAM_PAGE_SIZE;
-  const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
-  const body = box.querySelector("#tvBody");
-
-  // === filas ===
-  body.innerHTML = slice.map(emp => `
+  const start = __teamPage*TEAM_PAGE_SIZE, slice = __teamList.slice(start, start+TEAM_PAGE_SIZE);
+  const body = $("#tvBody", box);
+  body.innerHTML = slice.map(emp=>`
     <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role||''}" data-phone="${emp.phone||''}">
       <td><b>${emp.name}</b></td>
       <td class="tv-hours">—</td>
       <td class="tv-live">—</td>
       <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
-    </tr>
-  `).join("");
+    </tr>`).join("");
 
-  // === Navegación ===
-  box.querySelector("#tvPrev").onclick = () => {
-    __teamPage = Math.max(0, __teamPage - 1);
-    renderTeamViewPage();
-  };
-  box.querySelector("#tvNext").onclick = () => {
-    __teamPage = Math.min(Math.ceil(__teamList.length / TEAM_PAGE_SIZE) - 1, __teamPage + 1);
-    renderTeamViewPage();
-  };
+  $("#tvPrev",box).onclick = ()=>{ __teamPage=Math.max(0,__teamPage-1); renderTeamViewPage(); };
+  $("#tvNext",box).onclick = ()=>{ __teamPage=Math.min(Math.ceil(__teamList.length/TEAM_PAGE_SIZE)-1,__teamPage+1); renderTeamViewPage(); };
 
-  // === Cargar horas totales por empleado ===
-  slice.forEach(async emp => {
-    try {
-      const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`);
+  slice.forEach(async emp=>{
+    try{
+      const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`, {cache:"no-store"});
       const d = await r.json();
       const tr = body.querySelector(`tr[data-email="${CSS.escape(emp.email)}"]`);
-      if (!tr) return;
-      tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (d.total ?? 0).toFixed(1) : "0";
-    } catch(e){}
+      if (tr) tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (Number(d.total||0)).toFixed(1) : "0";
+    }catch{}
   });
 
-  // === Refrescar estado LIVE (Working) ===
   updateTeamViewLiveStatus();
 }
+async function updateTeamViewLiveStatus(){
+  try{
+    const rows = $all(".tv-table tr[data-email]"); if (!rows.length) return;
+    for (const row of rows){
+      const email=row.dataset.email, liveCell=row.querySelector(".tv-live"), totalCell=row.querySelector(".tv-hours");
+      const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`, {cache:"no-store"});
+      const d = await r.json(); if (!d.ok || !d.days) continue;
 
-/* === Actualización Live: columna “Live (Working)” === */
-async function updateTeamViewLiveStatus() {
-  try {
-    const rows = document.querySelectorAll(".tv-table tr[data-email]");
-    if (!rows.length) return;
+      const todayKey = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase();
+      const today = d.days.find(x=> x.name.slice(0,3).toLowerCase()===todayKey);
+      if (!today?.shift) { liveCell.innerHTML="—"; continue; }
 
-    for (const row of rows) {
-      const email = row.dataset.email;
-      const liveCell = row.querySelector(".tv-live");
-      const totalCell = row.querySelector(".tv-hours");
-
-      const res = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`);
-      const data = await res.json();
-      if (!data.ok || !data.days) continue;
-
-      const todayName = new Date().toLocaleString("en-US", { weekday: "short" }).slice(0,3).toLowerCase();
-      const today = data.days.find(d => d.name.slice(0,3).toLowerCase() === todayName);
-      if (!today || !today.shift) continue;
-
-      const shift = today.shift.trim();
-      if (shift.endsWith(".")) {
-        const startStr = shift.replace(".", "").trim();
-        const startTime = parseTime(startStr);
-        const now = new Date();
-        const diffHrs = Math.max(0, (now - startTime) / 36e5);
-
-        // 🟢 Live
-        liveCell.innerHTML = `🟢 ${diffHrs.toFixed(1)}h`;
-        liveCell.style.color = "#33ff66";
-        liveCell.style.fontWeight = "600";
-        liveCell.style.textShadow = "0 0 10px rgba(51,255,102,0.6)";
-
-        // 💡 Mostrar total + live (+x.x)
-        if (totalCell && !isNaN(parseFloat(totalCell.textContent))) {
-          const staticHours = parseFloat(totalCell.textContent);
-          const combined = staticHours + diffHrs;
-          totalCell.innerHTML = `${combined.toFixed(1)} <span style="color:#33a0ff;font-size:0.85em;">(+${diffHrs.toFixed(1)})</span>`;
-        }
-
-      } else {
-        liveCell.innerHTML = "—";
-        liveCell.style.color = "#aaa";
-        liveCell.style.fontWeight = "400";
-        liveCell.style.textShadow = "none";
+      if (today.shift.trim().endsWith(".")){
+        const startTime = parseTime(today.shift.replace(/\.$/,"").trim());
+        if(!startTime) continue;
+        const diff = Math.max(0,(Date.now()-startTime.getTime())/36e5);
+        liveCell.innerHTML = `🟢 ${diff.toFixed(1)}h`;
+        liveCell.style.color="#33ff66"; liveCell.style.fontWeight="600"; liveCell.style.textShadow="0 0 10px rgba(51,255,102,.6)";
+        const base = parseFloat(totalCell.textContent)||0;
+        totalCell.innerHTML = `${(base+diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
+      }else{
+        liveCell.innerHTML="—"; liveCell.style.color="#aaa"; liveCell.style.fontWeight="400"; liveCell.style.textShadow="none";
       }
     }
-  } catch (err) {
-    console.warn("Team View Live update error:", err);
-  }
+  }catch(e){ console.warn("Live col error:", e); }
 }
-
-// 🔄 Actualiza cada 2 minutos
 setInterval(updateTeamViewLiveStatus, 120000);
 
-/* ============================================================
-   🧩 Employee Modal — Full Rebuild (v4.9.4 Stable Clone)
-   + ⏱️ Live Shift Integration (v2.3 Instant Total)
-   ============================================================ */
-async function openEmployeePanel(btnEl) {
+/* ============== EMPLOYEE MODAL (gestión) ============== */
+async function openEmployeePanel(btnEl){
   const tr = btnEl.closest("tr");
-  const email = tr.dataset.email;
-  const name = tr.dataset.name;
-  const role = tr.dataset.role || "";
-  const phone = tr.dataset.phone || "";
+  const email = tr.dataset.email, name = tr.dataset.name, role = tr.dataset.role||"", phone = tr.dataset.phone||"";
+  const modalId=`emp-${email.replace(/[@.]/g,"_")}`; if ($("#"+modalId)) return;
 
-  const modalId = `emp-${email.replace(/[@.]/g, "_")}`;
-  if (document.getElementById(modalId)) return;
+  let data=null;
+  try{
+    const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`, {cache:"no-store"});
+    data = await r.json(); if (!data.ok) throw new Error();
+  }catch{ alert("No schedule found for this employee."); return; }
 
-  let data = null;
-  try {
-    const res = await fetch(
-      `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`
-    );
-    data = await res.json();
-    if (!data.ok) throw new Error("No schedule");
-  } catch (e) {
-    alert("No schedule found for this employee.");
-    return;
-  }
-
-  // === Crear modal estructurado ===
   const m = document.createElement("div");
-  m.className = "employee-modal emp-panel";
-  m.id = modalId;
+  m.className="employee-modal emp-panel"; m.id=modalId;
   m.innerHTML = `
     <div class="emp-box">
       <button class="emp-close">×</button>
       <div class="emp-header">
         <h3>${name}</h3>
-        ${phone ? `<p class="emp-phone"><a href="tel:${phone}">${phone}</a></p>` : ""}
+        ${phone?`<p class="emp-phone"><a href="tel:${phone}">${phone}</a></p>`:""}
         <p class="emp-role">${role}</p>
       </div>
       <table class="schedule-mini">
         <tr><th>Day</th><th>Shift</th><th>Hours</th></tr>
-        ${data.days
-          .map(
-            (d) => `
-          <tr data-day="${d.name.slice(0,3)}" data-shift="${d.shift}">
+        ${data.days.map(d=>`
+          <tr data-day="${d.name.slice(0,3)}" data-original="${(d.shift||"-").replace(/"/g,'&quot;')}">
             <td>${d.name}</td>
-            <td>${d.shift || "-"}</td>
-            <td>${d.hours || 0}</td>
-          </tr>`
-          )
-          .join("")}
+            <td ${isManagerRole(currentUser?.role) ? 'contenteditable="true"' : ''}>${d.shift||"-"}</td>
+            <td>${d.hours||0}</td>
+          </tr>`).join("")}
       </table>
-      <p class="total">Total Hours: <b id="tot-${name.replace(/\s+/g, "_")}">${data.total || 0}</b></p>
-      <p class="live-hours" id="lh-${name.replace(/\s+/g, "_")}"></p>
-      <button class="emp-refresh">⚙️ Check for Updates</button>
+      <p class="total">Total Hours: <b id="tot-${name.replace(/\s+/g,"_")}">${data.total||0}</b></p>
+      <p class="live-hours"></p>
+      ${isManagerRole(currentUser?.role) ? `
+        <div class="emp-actions" style="margin-top:10px;">
+          <button class="btn-update">✏️ Update Shift</button>
+          <button class="btn-today">📤 Send Today</button>
+          <button class="btn-tomorrow">📤 Send Tomorrow</button>
+          <p id="empStatusMsg-${email.replace(/[@.]/g,"_")}" class="emp-status-msg" style="margin-top:6px;font-size:.9em;"></p>
+        </div>` : ``}
+      <button class="emp-refresh" style="margin-top:8px;">⚙️ Check for Updates</button>
     </div>
   `;
   document.body.appendChild(m);
 
-   /* === LIVE FIX: prevent total hours from disappearing === */
-setTimeout(() => {
-  const totalEl = m.querySelector(".total b");
-  if (totalEl && totalEl.textContent.trim() === "") {
-    totalEl.textContent = data.total || 0;
+  $(".emp-close",m).onclick = ()=> m.remove();
+  $(".emp-refresh",m).onclick = ()=> { try{ if("caches" in window) caches.keys().then(k=>k.forEach(n=>caches.delete(n))); }catch{}; m.classList.add("flash"); setTimeout(()=>location.reload(), 900); };
+
+  if (isManagerRole(currentUser?.role)) {
+    $(".btn-update",m).onclick   = ()=> updateShiftFromModal(email, m);
+    $(".btn-today",m).onclick    = ()=> sendShiftMessage(email, "sendtoday");
+    $(".btn-tomorrow",m).onclick = ()=> sendShiftMessage(email, "sendtomorrow");
   }
-}, 800);
 
-/* Forzar persistencia visual del total */
-const totalEl = m.querySelector(".total b");
-if (totalEl) {
-  const totalValue = totalEl.textContent;
-  const observer = new MutationObserver(() => {
-    if (totalEl.textContent.trim() === "") totalEl.textContent = totalValue;
-  });
-  observer.observe(totalEl, { childList: true, characterData: true, subtree: true });
+  enableModalLiveShift(m, data.days);
 }
 
-  requestAnimationFrame(() => m.classList.add("in"));
-
-  // Eventos
-  m.querySelector(".emp-close").onclick = () => m.remove();
-  m.querySelector(".emp-refresh").onclick = () => checkForUpdatesInModal(m);
-
-  /* === Detectar si el empleado tiene un shift activo hoy === */
-  const today = new Date();
-  const currentDay = today.toLocaleString("en-US", { weekday: "short" }); // "Mon", "Tue", etc.
-  const rowToday = m.querySelector(`tr[data-day^="${currentDay}"]`);
-  if (rowToday) {
-    const shift = rowToday.dataset.shift || rowToday.cells[1]?.textContent || "";
-    const [startStr, endStr] = shift.split("-").map(s => s.trim());
-    if (startStr && endStr)
-      startLiveShift(m, startStr, endStr, m.querySelector(".total"));
-
-       /* === Mostrar 🟢 Working si tiene turno activo === */
-  if (rowToday && rowToday.dataset.shift && rowToday.dataset.shift.endsWith(".")) {
-    const header = m.querySelector(".emp-header h3");
-    if (header && !m.querySelector(".emp-working")) {
-      const badge = document.createElement("span");
-      badge.className = "emp-working";
-      badge.textContent = "🟢 Working";
-      badge.style.display = "block";
-      badge.style.fontWeight = "600";
-      badge.style.color = "#33ff66";
-      badge.style.textShadow = "0 0 10px rgba(51,255,102,0.5)";
-      badge.style.marginBottom = "4px";
-      header.parentNode.insertBefore(badge, header);
-    }
-  }
-     // === Activar monitoreo en vivo dentro del modal ===
-enableModalLiveShift(m, data.days);
-  }
-}
-
-/* ============================================================
-   ⏱️ Employee Modal Live Tracker (Working + Live Hours)
-   v5.4.2 — Prevent overwriting total (Stable)
-   ============================================================ */
-function enableModalLiveShift(modal, days) {
-  try {
-    const todayName = new Date()
-      .toLocaleString("en-US", { weekday: "short" })
-      .slice(0, 3)
-      .toLowerCase();
-
-    const today = days.find(
-      d => d.name.slice(0, 3).toLowerCase() === todayName
-    );
-    if (!today || !today.shift || /off/i.test(today.shift)) return;
-
-    const shift = today.shift.trim();
-    const table = modal.querySelector(".schedule-mini");
-    const row = Array.from(table.querySelectorAll("tr")).find(
-      r => r.cells[0]?.textContent.slice(0, 3).toLowerCase() === todayName
-    );
-    if (!row) return;
-
-    const cellHours = row.cells[2];
-    cellHours.dataset.locked = "true";
-
-   // 💡 Guardar las horas base del total (una sola vez)
-const totalEl = modal.querySelector(".total b");
-if (totalEl && !totalEl.dataset.baseHours) {
-  totalEl.dataset.baseHours = totalEl.textContent;
-}
-
-// 🟢 Turno activo (ej. "7:30.")
-if (shift.endsWith(".")) {
-  const startStr = shift.replace(".", "").trim();
-  const startTime = parseTime(startStr);
-
-  const update = () => {
-    const now = new Date();
-    const diffHrs = Math.max(0, (now - startTime) / 36e5);
-
-    // Mostrar horas vivas ⏱️
-    cellHours.innerHTML = `⏱️ ${diffHrs.toFixed(1)}h`;
-    cellHours.style.color = "#33a0ff";
-    cellHours.style.fontWeight = "600";
-
-    // 💡 Sumar al total (solo visual)
-    const totalEl = modal.querySelector(".total b");
-    if (totalEl) {
-      const base = parseFloat(totalEl.dataset.baseHours || totalEl.textContent) || 0;
-      const combined = base + diffHrs;
-      totalEl.innerHTML = `${combined.toFixed(1)} <span style="color:#33a0ff;font-size:0.85em;">(+${diffHrs.toFixed(1)})</span>`;
-    }
-
-    // Mostrar 🟢 Working si aún no existe
-    if (!modal.querySelector(".emp-working")) {
-      const header = modal.querySelector(".emp-header h3");
-      const badge = document.createElement("span");
-      badge.className = "emp-working";
-      badge.textContent = "🟢 Working";
-      badge.style.display = "block";
-      badge.style.fontWeight = "600";
-      badge.style.color = "#33ff66";
-      badge.style.textShadow = "0 0 10px rgba(51,255,102,0.5)";
-      badge.style.marginBottom = "4px";
-      header.parentNode.insertBefore(badge, header);
-    }
-  };
-
-  update();
-  clearInterval(modal.liveTimer);
-  modal.liveTimer = setInterval(update, 60000);
-}
-
-    // 🔚 Turno cerrado → mostrar horas totales normales
-    else {
-      const parts = shift.split("-");
-      if (parts.length === 2) {
-        const startStr = parts[0].trim();
-        const endStr = parts[1].trim();
-        const startTime = parseTime(startStr);
-        const endTime = parseTime(endStr);
-        const diffHrs = Math.max(0, (endTime - startTime) / 36e5);
-        cellHours.innerHTML = `${diffHrs.toFixed(1)}h`;
-        cellHours.style.color = "#999";
-        cellHours.style.fontWeight = "500";
-      }
-
-      const badge = modal.querySelector(".emp-working");
-      if (badge) badge.remove();
-    }
-
-    // ✅ Protección: evita que otra función borre los valores
-    const observer = new MutationObserver(() => {
-      if (cellHours.dataset.locked === "true" && cellHours.textContent.trim() === "") {
-        cellHours.textContent = cellHours.dataset.lastValue || cellHours.textContent;
-      } else {
-        cellHours.dataset.lastValue = cellHours.textContent;
-      }
-    });
-    observer.observe(cellHours, { childList: true, characterData: true, subtree: true });
-
-  } catch (err) {
-    console.warn("Modal live tracker inactive:", err);
-  }
-}
-
-/* ============================================================
-   🔄 Refresh en modal (no molesta a nadie)
-   ============================================================ */
-function checkForUpdatesInModal(modalEl){
+function enableModalLiveShift(modal, days){
   try{
-    if ("caches" in window) caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
-  }catch(e){}
-  modalEl.classList.add("flash");
-  setTimeout(()=>window.location.reload(true), 900);
-}
+    const key = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase();
+    const today = days.find(d=> d.name.slice(0,3).toLowerCase()===key);
+    if (!today?.shift || /off/i.test(today.shift)) return;
 
-function closeTeamView() {
-  document.getElementById("directoryWrapper")?.remove();
-}
+    const table = $(".schedule-mini", modal);
+    const row = $all("tr", table).find(r=> r.cells?.[0]?.textContent.slice(0,3).toLowerCase()===key);
+    if (!row) return;
+    const hoursCell = row.cells[2];
+    const shift = today.shift.trim();
 
-/* ============================================================
-   🔑 CHANGE PASSWORD — Secure Frontend Flow
-   Johan A. Giraldo (JAG15) | Allston Car Wash © 2025
-   ============================================================ */
+    const totalEl = $(".total b", modal);
+    if (totalEl && !totalEl.dataset.baseHours) totalEl.dataset.baseHours = totalEl.textContent;
 
-function openChangePassword() {
-  document.getElementById("changePasswordModal").style.display = "block";
-}
-
-function closeChangePassword() {
-  document.getElementById("changePasswordModal").style.display = "none";
-}
-
-async function submitChangePassword() {
-  const oldPass = document.getElementById("oldPass").value.trim();
-  const newPass = document.getElementById("newPass").value.trim();
-  const confirm = document.getElementById("confirmPass").value.trim();
-  const diag = document.getElementById("passDiag");
-
-  if (!oldPass || !newPass || !confirm) {
-    diag.textContent = "⚠️ Please fill out all fields.";
-    return;
-  }
-  if (newPass !== confirm) {
-    diag.textContent = "❌ New passwords do not match.";
-    return;
-  }
-  if (newPass.length < 6) {
-    diag.textContent = "⚠️ Password must be at least 6 characters.";
-    return;
-  }
-
-  try {
-    diag.textContent = "⏳ Updating password...";
-    const email = currentUser?.email;
-    if (!email) throw new Error("Session expired. Please log in again.");
-
-    const res = await fetch(
-      `${CONFIG.BASE_URL}?action=changePassword&email=${encodeURIComponent(email)}&oldPass=${encodeURIComponent(oldPass)}&newPass=${encodeURIComponent(newPass)}`
-    );
-    const data = await res.json();
-
-    if (data.ok) {
-      diag.textContent = "✅ Password updated successfully!";
-      setTimeout(() => {
-        closeChangePassword();
-        document.getElementById("oldPass").value =
-        document.getElementById("newPass").value =
-        document.getElementById("confirmPass").value = "";
-      }, 1500);
+    if (shift.endsWith(".")){
+      const startTime = parseTime(shift.replace(/\.$/,"").trim());
+      const tick = ()=>{
+        const diff = Math.max(0,(Date.now() - startTime.getTime())/36e5);
+        hoursCell.innerHTML = `⏱️ ${diff.toFixed(1)}h`;
+        hoursCell.style.color="#33a0ff"; hoursCell.style.fontWeight="600";
+        if (totalEl){
+          const base = parseFloat(totalEl.dataset.baseHours||totalEl.textContent)||0;
+          totalEl.innerHTML = `${(base+diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
+        }
+      };
+      tick();
+      clearInterval(modal.__tick__); modal.__tick__ = setInterval(tick, 60000);
     } else {
-      diag.textContent = "❌ " + (data.error || "Invalid current password.");
+      const p=shift.split("-"); if (p.length===2){
+        const a=parseTime(p[0].trim()), b=parseTime(p[1].trim());
+        if (a && b){ const diff=Math.max(0,(b-a)/36e5); hoursCell.textContent=`${diff.toFixed(1)}h`; hoursCell.style.color="#999"; }
+      }
     }
-  } catch (err) {
-    diag.textContent = "⚠️ " + err.message;
-  }
+  }catch(e){ console.warn("modal live err:", e); }
 }
+
+/* ============== MANAGER ACTIONS (simple fallback) ============== */
+async function updateShiftFromModal(targetEmail, modalEl){
+  const msg = $(`#empStatusMsg-${targetEmail.replace(/[@.]/g,"_")}`) || $(".emp-status-msg", modalEl);
+  const actor = currentUser?.email;
+  if (!actor) { msg && (msg.textContent="⚠️ Session expired. Login again."); return; }
+
+  const rows = $all(".schedule-mini tr[data-day]", modalEl);
+  const changes = rows.map(r=>{
+    const day = r.dataset.day; const newShift = r.cells[1].innerText.trim();
+    const original = (r.getAttribute("data-original")||"").trim();
+    return (newShift !== original) ? { day, newShift } : null;
+  }).filter(Boolean);
+
+  if (!changes.length){ msg && (msg.textContent="No changes to save."); toast("ℹ️ No changes", "info"); return; }
+
+  msg && (msg.textContent="✏️ Saving to Sheets...");
+  let ok=0;
+  for (const c of changes){
+    try{
+      const u = `${CONFIG.BASE_URL}?action=updateShift&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(targetEmail)}&day=${encodeURIComponent(c.day)}&shift=${encodeURIComponent(c.newShift)}`;
+      const r = await fetch(u, {cache:"no-store"}); const j = await r.json();
+      if (j?.ok) ok++;
+    }catch{}
+  }
+  if (ok===changes.length){ msg.textContent="✅ Updated on Sheets!"; toast("✅ Shifts updated","success"); rows.forEach(r=> r.setAttribute("data-original", r.cells[1].innerText.trim())); }
+  else if (ok>0){ msg.textContent=`⚠️ Partial save: ${ok}/${changes.length}`; toast("⚠️ Some shifts failed","error"); }
+  else { msg.textContent="❌ Could not update."; toast("❌ Update failed","error"); }
+}
+
+async function sendShiftMessage(targetEmail, action){
+  const msg = $(`#empStatusMsg-${targetEmail.replace(/[@.]/g,"_")}`);
+  msg && (msg.textContent="💬 Sending...");
+  const actor = currentUser?.email; if (!actor){ msg && (msg.textContent="⚠️ Session expired"); return; }
+
+  try{
+    const url = `${CONFIG.BASE_URL}?action=${action}&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(targetEmail)}`;
+    const r = await fetch(url, {cache:"no-store"}); const j = await r.json();
+    if (j?.ok){ msg.textContent = action==="sendtoday" ? "✅ Sent Today" : "✅ Sent Tomorrow"; toast("✅ Shift message sent","success"); }
+    else { msg.textContent = `⚠️ ${j?.error||"Failed to send"}`; toast("❌ Send failed","error"); }
+  }catch(e){ msg && (msg.textContent="⚠️ Connection error"); toast("❌ Connection error","error"); }
+}
+
+/* ============== TOASTS ============== */
+(function ensureToast(){
+  if ($("#toastContainer")) return;
+  const c=document.createElement("div"); c.id="toastContainer";
+  Object.assign(c.style,{position:"fixed",top:"18px",right:"18px",zIndex:"9999",display:"flex",flexDirection:"column",alignItems:"flex-end"});
+  document.body.appendChild(c);
+})();
+function toast(msg, type="info"){
+  const t=document.createElement("div"); t.className="acw-toast"; t.textContent=msg;
+  t.style.background = type==="success" ? "linear-gradient(135deg,#00c851,#007e33)" :
+                    type==="error" ? "linear-gradient(135deg,#ff4444,#cc0000)" :
+                                     "linear-gradient(135deg,#007bff,#33a0ff)";
+  Object.assign(t.style,{color:"#fff",padding:"10px 18px",marginTop:"8px",borderRadius:"8px",fontWeight:"600",
+    boxShadow:"0 6px 14px rgba(0,0,0,.25)",opacity:"0",transform:"translateY(-10px)",transition:"all .35s ease"});
+  $("#toastContainer").appendChild(t);
+  requestAnimationFrame(()=>{ t.style.opacity="1"; t.style.transform="translateY(0)"; });
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(-10px)"; setTimeout(()=>t.remove(),380); }, 2600);
+}
+
+/* ============== GLOBAL BINDS ============== */
+window.loginUser = loginUser;
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.refreshApp = refreshApp;
+window.logoutUser = logoutUser;
+window.openChangePassword = openChangePassword;
+window.closeChangePassword = closeChangePassword;
+window.submitChangePassword = submitChangePassword;
+window.openEmployeePanel = openEmployeePanel;
+window.sendShiftMessage = sendShiftMessage;
+window.updateShiftFromModal = updateShiftFromModal;
+
+console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.2"} | Base: ${CONFIG?.BASE_URL||"<no-config>"}`);

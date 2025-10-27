@@ -33,47 +33,42 @@
     <p id="totalHours" class="total"></p>
   </div>
 
-  <!-- ⚙️ SETTINGS BUTTON -->
-  <button id="settingsBtn" class="gear-btn" onclick="openSettings()">⚙️</button>
+<!-- ⚙️ SETTINGS BUTTON -->
+<button id="settingsBtn" class="gear-btn" onclick="openSettings()">⚙️</button>
 
-  <!-- ⚙️ SETTINGS MODAL -->
-  <div id="settingsModal" class="modal" style="display:none;">
-    <div class="modal-content glass">
-      <span class="close" onclick="closeSettings()">×</span>
-      <h3>⚙️ Settings</h3>
+<!-- ⚙️ SETTINGS MODAL -->
+<div id="settingsModal" class="modal" style="display:none;">
+  <div class="modal-content glass">
+    <span class="close" onclick="closeSettings()">×</span>
+    <h3>⚙️ Settings</h3>
 
-      <div class="settings-section">
-        <button onclick="refreshApp()">🔄 Check for Updates</button>
-        <button onclick="logoutUser()">🚪 Log Out</button>
-      </div>
+    <div class="settings-section">
+      <button onclick="refreshApp()">🔄 Check for Updates</button>
+      <button onclick="logoutUser()">🚪 Log Out</button>
+      <button onclick="openChangePassword()">🔑 Change Password</button>
+    </div>
 
-      <div class="settings-section" style="margin-top:10px;">
-        <button onclick="openChangePassword()">🔑 Change Password</button>
-      </div>
-
-      <!-- 🔑 CHANGE PASSWORD -->
-      <div id="changePasswordModal" class="modal" style="display:none;">
-        <div class="modal-content glass">
-          <span class="close" onclick="closeChangePassword()">×</span>
-          <h3>🔑 Change Password</h3>
-          <div class="settings-section">
-            <input id="oldPass" type="password" placeholder="Current password" />
-            <input id="newPass" type="password" placeholder="New password" />
-            <input id="confirmPass" type="password" placeholder="Confirm new password" />
-            <button onclick="submitChangePassword()">✅ Save New Password</button>
-            <p id="passDiag" class="error" style="margin-top:8px;"></p>
-          </div>
-        </div>
-      </div>
-
-      <!-- 📲 INSTALL TO PHONE -->
-      <div class="settings-section" style="margin-top:18px;text-align:center;">
-        <button id="installToPhoneBtn" class="download-btn">📲 Download to Phone</button>
-        <p id="installTip" style="font-size:0.9em;color:#99bbff;margin-top:8px;"></p>
-      </div>
+    <div class="settings-section" style="margin-top:18px;text-align:center;">
+      <button id="installToPhoneBtn" class="download-btn">📲 Download to Phone</button>
+      <p id="installTip" style="font-size:0.9em;color:#99bbff;margin-top:8px;"></p>
     </div>
   </div>
+</div>
 
+<!-- 🔑 CHANGE PASSWORD MODAL -->
+<div id="changePasswordModal" class="modal" style="display:none;">
+  <div class="modal-content glass">
+    <span class="close" onclick="closeChangePassword()">×</span>
+    <h3>🔑 Change Password</h3>
+    <div class="settings-section">
+      <input id="oldPass" type="password" placeholder="Current password" />
+      <input id="newPass" type="password" placeholder="New password" />
+      <input id="confirmPass" type="password" placeholder="Confirm new password" />
+      <button onclick="submitChangePassword()">✅ Save New Password</button>
+      <p id="passDiag" class="error" style="margin-top:8px;"></p>
+    </div>
+  </div>
+</div>
   <!-- 🧾 FOOTER -->
   <footer class="hud bottom-center">
     Powered by <b>JAG15</b> | Allston Car Wash © 2025<br>

@@ -393,57 +393,81 @@ setInterval(updateTeamViewLiveStatus, 120000);
 async function openEmployeePanel(btnEl){
   const tr = btnEl.closest("tr");
   const email = tr.dataset.email, name = tr.dataset.name, role = tr.dataset.role||"", phone = tr.dataset.phone||"";
-  const modalId=`emp-${email.replace(/[@.]/g,"_")}`; if ($("#"+modalId)) return;
+  const modalId = `emp-${email.replace(/[@.]/g,"_")}`;
+  if (document.getElementById(modalId)) return;
 
-  let data=null;
+  let data = null;
   try{
     const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`, {cache:"no-store"});
-    data = await r.json(); if (!data.ok) throw new Error();
-  }catch{ alert("No schedule found for this employee."); return; }
+    data = await r.json();
+    if (!data.ok) throw new Error();
+  }catch{
+    alert("No schedule found for this employee.");
+    return;
+  }
 
   const m = document.createElement("div");
-  m.className="employee-modal emp-panel"; m.id=modalId;
+  m.className = "employee-modal emp-panel";
+  m.id = modalId;
+
   m.innerHTML = `
     <div class="emp-box">
       <button class="emp-close">×</button>
       <div class="emp-header">
         <h3>${name}</h3>
-        ${phone?`<p class="emp-phone"><a href="tel:${phone}">${phone}</a></p>`:""}
+        ${phone ? `<p class="emp-phone"><a href="tel:${phone}">${phone}</a></p>` : ""}
         <p class="emp-role">${role}</p>
       </div>
+
       <table class="schedule-mini">
         <tr><th>Day</th><th>Shift</th><th>Hours</th></tr>
-        ${data.days.map(d=>`
+        ${(data.days||[]).map(d => `
           <tr data-day="${d.name.slice(0,3)}" data-original="${(d.shift||"-").replace(/"/g,'&quot;')}">
             <td>${d.name}</td>
             <td ${isManagerRole(currentUser?.role) ? 'contenteditable="true"' : ''}>${d.shift||"-"}</td>
             <td>${d.hours||0}</td>
           </tr>`).join("")}
       </table>
+
       <p class="total">Total Hours: <b id="tot-${name.replace(/\s+/g,"_")}">${data.total||0}</b></p>
       <p class="live-hours"></p>
+
       ${isManagerRole(currentUser?.role) ? `
         <div class="emp-actions" style="margin-top:10px;">
           <button class="btn-update">✏️ Update Shift</button>
           <button class="btn-today">📤 Send Today</button>
           <button class="btn-tomorrow">📤 Send Tomorrow</button>
+          <button class="btn-history">📚 History (5w)</button>
           <p id="empStatusMsg-${email.replace(/[@.]/g,"_")}" class="emp-status-msg" style="margin-top:6px;font-size:.9em;"></p>
-        </div>` : ``}
+        </div>
+      ` : ``}
+
       <button class="emp-refresh" style="margin-top:8px;">⚙️ Check for Updates</button>
     </div>
-  `;
+  `; // ← ← ← Cierra el template string aquí (importante)
+
   document.body.appendChild(m);
 
-  $(".emp-close",m).onclick = ()=> m.remove();
-  $(".emp-refresh",m).onclick = ()=> { try{ if("caches" in window) caches.keys().then(k=>k.forEach(n=>caches.delete(n))); }catch{}; m.classList.add("flash"); setTimeout(()=>location.reload(), 900); };
-
-  if (isManagerRole(currentUser?.role)) {
-    $(".btn-update",m).onclick   = ()=> updateShiftFromModal(email, m);
-    $(".btn-today",m).onclick    = ()=> sendShiftMessage(email, "sendtoday");
-    $(".btn-tomorrow",m).onclick = ()=> sendShiftMessage(email, "sendtomorrow");
+  // binds
+  m.querySelector(".emp-close").onclick = () => m.remove();
+  const refBtn = m.querySelector(".emp-refresh");
+  if (refBtn) {
+    refBtn.onclick = () => {
+      try { if ("caches" in window) caches.keys().then(k => k.forEach(n => caches.delete(n))); } catch {}
+      m.classList.add("flash");
+      setTimeout(() => location.reload(), 900);
+    };
   }
 
-  enableModalLiveShift(m, data.days);
+  if (isManagerRole(currentUser?.role)) {
+    m.querySelector(".btn-update").onclick   = () => updateShiftFromModal(email, m);
+    m.querySelector(".btn-today").onclick    = () => sendShiftMessage(email, "sendtoday");
+    m.querySelector(".btn-tomorrow").onclick = () => sendShiftMessage(email, "sendtomorrow");
+    const hb = m.querySelector(".btn-history");
+    if (hb) hb.onclick = () => openHistoryFor(email, name);  // botón History
+  }
+
+  enableModalLiveShift(m, data.days||[]);
 }
 
 function enableModalLiveShift(modal, days){
@@ -512,17 +536,48 @@ async function updateShiftFromModal(targetEmail, modalEl){
   else { msg.textContent="❌ Could not update."; toast("❌ Update failed","error"); }
 }
 
-async function sendShiftMessage(targetEmail, action){
-  const msg = $(`#empStatusMsg-${targetEmail.replace(/[@.]/g,"_")}`);
-  msg && (msg.textContent="💬 Sending...");
-  const actor = currentUser?.email; if (!actor){ msg && (msg.textContent="⚠️ Session expired"); return; }
+/* ============== SEND SHIFT MESSAGE ============== */
+/* ============== SEND SHIFT MESSAGE (v5.6.3) ============== */
+async function sendShiftMessage(targetEmail, action) {
+  const msgBox = document.querySelector(
+    `#empStatusMsg-${targetEmail.replace(/[@.]/g, "_")}`
+  );
+  if (msgBox) msgBox.textContent = "📤 Sending...";
+  const actor = currentUser?.email;
+  if (!actor) {
+    if (msgBox) msgBox.textContent = "⚠️ Session expired";
+    return;
+  }
 
-  try{
-    const url = `${CONFIG.BASE_URL}?action=${action}&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(targetEmail)}`;
-    const r = await fetch(url, {cache:"no-store"}); const j = await r.json();
-    if (j?.ok){ msg.textContent = action==="sendtoday" ? "✅ Sent Today" : "✅ Sent Tomorrow"; toast("✅ Shift message sent","success"); }
-    else { msg.textContent = `⚠️ ${j?.error||"Failed to send"}`; toast("❌ Send failed","error"); }
-  }catch(e){ msg && (msg.textContent="⚠️ Connection error"); toast("❌ Connection error","error"); }
+  try {
+    const url = `${CONFIG.BASE_URL}?action=${action}&actor=${encodeURIComponent(
+      actor
+    )}&target=${encodeURIComponent(targetEmail)}`;
+    const r = await fetch(url, { cache: "no-store" });
+    const data = await r.json();
+
+    if (data.ok) {
+      const name = data.sent?.name || "Employee";
+      const shift = data.sent?.shift || "-";
+      const mode = data.sent?.mode?.toUpperCase?.() || action.toUpperCase();
+
+      msgBox.textContent = `✅ ${name} (${mode}) → ${shift}`;
+      msgBox.style.color = "#00b341";
+      toast(`✅ WhatsApp sent to ${name}`, "success");
+
+      // 🔔 Vibración ligera en móviles
+      if (window.navigator.vibrate) window.navigator.vibrate(100);
+    } else {
+      const err = data.error || "unknown_error";
+      msgBox.textContent = `⚠️ ${err}`;
+      msgBox.style.color = "#ff4444";
+      toast(`⚠️ Send failed (${err})`, "error");
+    }
+  } catch (err) {
+    console.error("sendShiftMessage error:", err);
+    msgBox.textContent = "❌ Network error";
+    msgBox.style.color = "#ff4444";
+  }
 }
 
 /* ============== TOASTS ============== */
@@ -573,6 +628,8 @@ window.submitChangePassword = submitChangePassword;
 window.openEmployeePanel = openEmployeePanel;
 window.sendShiftMessage = sendShiftMessage;
 window.updateShiftFromModal = updateShiftFromModal;
+window.showWelcome = showWelcome;
+window.renderTeamViewPage = renderTeamViewPage;
 
 console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.2"} | Base: ${CONFIG?.BASE_URL||"<no-config>"}`);
 
@@ -608,3 +665,208 @@ function closeSettings() {
 // 🔁 Asegura que las funciones globales sigan disponibles
 window.openSettings = openSettings;
 window.closeSettings = closeSettings;
+
+/* ============================================================
+   ACW — History Picker (Settings-card, 5 weeks) — Clean Build
+   Reqs: CONFIG.BASE_URL (GAS), fetchWeekHistory (opcional)
+   ============================================================ */
+
+/** 1) Fallback seguro: obtiene 5 semanas por offset si no existe fetchWeekHistory() */
+async function __acwHistory5w(email, weeks = 5){
+  if (typeof fetchWeekHistory === "function") {
+    try { return await fetchWeekHistory(email, weeks); } catch {}
+  }
+  function weekLabelByOffset(off=0){
+    const now=new Date(), day=now.getDay();                 // 0=Sun
+    const mon=new Date(now); mon.setHours(0,0,0,0);
+    mon.setDate(mon.getDate()-((day+6)%7)-(off*7));         // lunes
+    const sun=new Date(mon); sun.setDate(mon.getDate()+6);  // domingo
+    const F = d=>d.toLocaleDateString("en-US",{month:"short",day:"numeric"});
+    return `${F(mon)} – ${F(sun)}`;
+  }
+
+  const out = [];
+  for (let i=0; i<weeks; i++){
+    try{
+      const r = await fetch(`${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}&offset=${i}`, {cache:"no-store"});
+      const d = await r.json();
+      out.push({
+        label: d.weekLabel || weekLabelByOffset(i),
+        total: Number(d.total||0),
+        days:  Array.isArray(d.days) ? d.days : []
+      });
+    }catch{
+      out.push({ label: weekLabelByOffset(i), total: 0, days: [] });
+    }
+  }
+  return out;
+}
+
+/** 2) Abre tarjeta centrada tipo Settings */
+function openHistoryPicker(email, name="My History"){
+  // Cierra si ya está abierta
+  document.getElementById("acwhOverlay")?.remove();
+
+  // Overlay + Card
+  const overlay = document.createElement("div");
+  overlay.id = "acwhOverlay";
+  overlay.className = "acwh-overlay";
+  overlay.innerHTML = `
+    <div class="acwh-card">
+      <div class="acwh-head">
+        <div style="width:22px"></div>
+        <h3 class="acwh-title">History (5 weeks)</h3>
+        <button class="acwh-close" aria-label="Close">×</button>
+      </div>
+      <div class="acwh-sub">${String(name||"").toUpperCase()}</div>
+      <div id="acwhBody" class="acwh-list">
+        <div class="acwh-row" style="justify-content:center;opacity:.7;">Loading…</div>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  // Cerrar con botón o click fuera
+  overlay.querySelector(".acwh-close").onclick = () => overlay.remove();
+  overlay.addEventListener("click", e=>{ if(e.target===overlay) overlay.remove(); });
+
+  // Render lista inicial
+  renderHistoryPickerList(email, name, overlay);
+}
+
+/** 3) Lista de semanas (usa fallback seguro) */
+async function renderHistoryPickerList(email, name, root){
+  const body = root.querySelector("#acwhBody");
+  body.className = "acwh-list";
+
+  const hist = await __acwHistory5w(email, 5);
+
+  body.innerHTML = hist.map((w,i)=>`
+    <div class="acwh-row" data-idx="${i}">
+      <div class="acwh-week">
+        <div>${w.label}</div>
+        <small>${i===0 ? "Week (current)" : `Week -${i}`}</small>
+      </div>
+      <div class="acwh-total">${Number(w.total||0).toFixed(1)}h</div>
+      <button class="acwh-btn" data-idx="${i}">Open ›</button>
+    </div>
+  `).join("");
+
+  // Abrir detalle desde la fila o el botón
+  body.querySelectorAll(".acwh-row, .acwh-btn").forEach(el=>{
+    el.onclick = ()=>{
+      const idx = Number(el.dataset.idx || el.closest(".acwh-row")?.dataset.idx || 0);
+      renderHistoryDetailCentered(hist[idx], email, name, idx, root);
+    };
+  });
+
+  // Asegura títulos
+  root.querySelector(".acwh-title").textContent = "History (5 weeks)";
+  root.querySelector(".acwh-sub").textContent   = String(name||"").toUpperCase();
+}
+
+/** 4) Detalle de una semana en la MISMA tarjeta */
+function renderHistoryDetailCentered(week, email, name, offset, root){
+  const body = root.querySelector("#acwhBody");
+  body.className = ""; // modo detalle
+
+  // Header dinámico
+  root.querySelector(".acwh-title").textContent = week.label;
+  root.querySelector(".acwh-sub").textContent =
+    `${offset===0 ? "Week (current)" : `Week -${offset}`} • ${String(name||"").toUpperCase()}`;
+
+  // Tabla de días
+  const rows = (week.days||[]).map(d=>{
+    const off = /off/i.test(String(d.shift||""));
+    const styleCell = off ? 'style="color:#999"' : '';
+    const styleHours = off ? 'style="color:#999;text-align:right"' : 'style="text-align:right"';
+    return `<tr>
+      <td>${d.name||""}</td>
+      <td ${styleCell}>${d.shift||'-'}</td>
+      <td ${styleHours}>${Number(d.hours||0).toFixed(1)}</td>
+    </tr>`;
+  }).join("");
+
+  body.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <button class="acwh-back">‹ Weeks</button>
+      <div class="acwh-total">${Number(week.total||0).toFixed(1)}h</div>
+    </div>
+    <table class="acwh-table">
+      <tr><th>Day</th><th>Shift</th><th>Hours</th></tr>
+      ${rows}
+    </table>
+    <div class="acwh-total-line">Total: ${Number(week.total||0).toFixed(1)}h</div>
+  `;
+
+  body.querySelector(".acwh-back").onclick = () =>
+    renderHistoryPickerList(email, name, root);
+}
+
+/** 5) Exports globales (compat con botones existentes) */
+window.openHistoryPicker = openHistoryPicker;
+window.openHistoryFor   = (...args)=> openHistoryPicker(...args);
+
+/** 6) Botón “History (5w)” fijo + Hook único al dashboard */
+function addHistoryButtonForMe(){
+  if (document.getElementById("historyBtnMe")) return;
+  const btn = document.createElement("button");
+  btn.id="historyBtnMe";
+  btn.textContent = "History (5w)";
+  btn.style.cssText = "position:fixed;top:25px;left:40px;background:#fff;color:#0078ff;border:2px solid rgba(0,120,255,.4);border-radius:10px;padding:8px 16px;font-weight:600;box-shadow:0 4px 20px rgba(0,120,255,.4);cursor:pointer;z-index:9999;";
+  btn.onclick = ()=> openHistoryPicker(currentUser?.email||"", `${currentUser?.name||"Me"}`);
+  document.body.appendChild(btn);
+}
+
+// Hook único (no duplica si ya fue aplicado)
+(function(){
+  const prev = window.showWelcome || (async()=>{});
+  if (!prev.__acwHookedHistory){
+    const wrapped = async function(name, role){
+      await prev.call(this, name, role);
+      addHistoryButtonForMe();
+    };
+    wrapped.__acwHookedHistory = true;
+    window.showWelcome = wrapped;
+  }
+})();
+
+// === ACW v5.6.2 — Hotfix mini (pegar al FINAL) ===
+(function(){
+  // 1) Inyecta CSS mínimo para History y la animación del Team View
+  function injectStyleOnce(id, css){
+    if (document.getElementById(id)) return;
+    const s = document.createElement('style');
+    s.id = id; s.textContent = css; document.head.appendChild(s);
+  }
+  injectStyleOnce('acw-min-css', `
+    .acwh-overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.25);backdrop-filter:blur(2px);z-index:10050;}
+    .acwh-card{width:90%;max-width:560px;background:rgba(255,255,255,.97);border-radius:16px;box-shadow:0 20px 50px rgba(0,0,0,.25);padding:14px 16px;}
+    .acwh-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:4px}
+    .acwh-sub{color:#0078ff;font-weight:700;margin:0 0 6px 0;text-align:center}
+    .acwh-list{display:flex;flex-direction:column;gap:6px;max-height:60vh;overflow:auto}
+    .acwh-row{display:grid;grid-template-columns:1fr auto auto;gap:10px;align-items:center;padding:10px 12px;border:1px solid rgba(0,0,0,.06);border-radius:10px;background:#fff}
+    .acwh-week small{color:#777}
+    .acwh-total{font-weight:700}
+    .acwh-btn{border:1px solid #0078ff;background:#f3f9ff;padding:6px 10px;border-radius:8px;cursor:pointer}
+    .acwh-table{width:100%;border-collapse:collapse;margin-top:6px}
+    .acwh-table th,.acwh-table td{padding:8px;border-bottom:1px solid rgba(0,0,0,.06)}
+    .acwh-total-line{margin-top:8px;font-weight:700;text-align:right}
+    /* Si el fix pack usa .show, garantizamos la animación */
+    .tv-wrapper.show{visibility:visible;opacity:1;transform:translate(-50%,-50%) scale(1)}
+  `);
+
+  // 2) Guard para el fix de Team View (evita undefined y flicker)
+  try{
+    const prev = typeof window.renderTeamViewPage==='function'
+      ? window.renderTeamViewPage
+      : (typeof renderTeamViewPage==='function' ? renderTeamViewPage : null);
+
+    if (prev){
+      window.renderTeamViewPage = function(...args){
+        prev.apply(this, args);
+        const box = document.querySelector('#directoryWrapper');
+        if (box) box.classList.add('show'); // activa el CSS de arriba
+      };
+    }
+  }catch(e){ console.warn('TV guard hotfix:', e); }
+})();

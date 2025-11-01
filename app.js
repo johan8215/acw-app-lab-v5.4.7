@@ -411,8 +411,9 @@ async function loadEmployeeDirectory() {
      setSheetOrderFromDirectory(j.directory || []);
     if (!j?.ok) return;
 
-    __teamList = j.directory || [];
-    __teamPage = 0;
+    // orden canónico del Sheet
+__teamList = (j.directory || []).slice().sort(bySheetOrder);
+__teamPage = 0;
     renderTeamViewPage();
   } catch (e) {
     if (e.name!=="AbortError") console.warn(e);

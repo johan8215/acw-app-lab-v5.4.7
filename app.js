@@ -1465,6 +1465,50 @@ function bySheetOrder(a,b){
 
   function dayKey(name){ return name.slice(0,3); }
   function fmtInit(n){ return (n||"?").split(/\s+/).map(p=>p[0]||"").join("").slice(0,2).toUpperCase(); }
+   /* === Weekly Groups (Back/Front/Cashiers) — config + helpers === */
+const GROUP_MARKERS = {
+  back:  { label:"BACK",  color:"#0a56cc", start:"J. Giraldo",  end:"D. Gonzales" },
+  front: { label:"FRONT", color:"#f59e0b", start:"E. Reyes",    end:"S. Muleta"  },
+  cash:  { label:"CASH",  color:"#6f42c1", start:"K. Ortiz",    end:"C. Bustamante" }
+};
+
+function _norm(s){ return String(s||"").normalize("NFD").replace(/\p{Diacritic}/gu,"").toLowerCase(); }
+function _hit(emp, needle){
+  const n = _norm(needle);
+  return _norm(emp.name).includes(n) || _norm(emp.email||"").includes(n);
+}
+function computeGroups(employees){
+  // Calcula índices de inicio/fin por nombre o email
+  function bounds(g){
+    let i0 = employees.findIndex(e=>_hit(e, g.start));
+    let i1 = employees.findIndex(e=>_hit(e, g.end));
+    if (i0<0 && i1<0) return null;
+    if (i0<0) i0 = i1; if (i1<0) i1 = i0;
+    if (i0>i1) [i0,i1] = [i1,i0];
+    return {i0, i1};
+  }
+  const backB  = bounds(GROUP_MARKERS.back);
+  const frontB = bounds(GROUP_MARKERS.front);
+  const cashB  = bounds(GROUP_MARKERS.cash);
+
+  const map = new Map(); // email -> groupKey
+  employees.forEach((e, idx)=>{
+    let key = "other";
+    if (backB && idx>=backB.i0  && idx<=backB.i1)   key = "back";
+    else if (frontB && idx>=frontB.i0 && idx<=frontB.i1) key = "front";
+    else if (cashB && idx>=cashB.i0  && idx<=cashB.i1) key = "cash";
+    map.set(e.email, key);
+  });
+  return map;
+}
+function isActiveWeek(d){
+  if (!d) return false;
+  if (Number(d.total||0) > 0) return true;
+  return Array.isArray(d.days) && d.days.some(x=>{
+    const s = String(x.shift||"").trim();
+    return s && !/^(-|off|n\/a)$/i.test(s);
+  });
+}
 
   /* ---------- Abrir/Cerrar ---------- */
   window.openWeeklyBoard = async function openWeeklyBoard(offset=0){

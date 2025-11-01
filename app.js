@@ -1525,6 +1525,11 @@ __wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);
        const dir = await API.getDirectory();
 // 👇 guarda el orden canónico (por email / nombre)
 setSheetOrderFromDirectory(dir?.directory || []);
+     const dir = await API.getDirectory();
+setSheetOrderFromDirectory(dir?.directory || []);   // ← fija el orden del Sheet
+if (dir?.ok && Array.isArray(dir.directory)) {
+  ...
+}  
 
       tbody.innerHTML = __wbEmployees.map(emp => `
         <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">

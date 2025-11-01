@@ -1607,14 +1607,25 @@ async function loadWeeklyData(root){
     }
     tbody.innerHTML = html;
 
-    // 4) Resumen arriba (si falta)
-    const head = root.querySelector(".wb-head");
-    if (head && !head.querySelector("#wbSummary")){
-      const sum = document.createElement("div");
-      sum.id = "wbSummary"; sum.className = "wb-summary";
-      sum.textContent = "Activos: 0 (Back 0 • Front 0 • Cash 0)";
-      head.appendChild(sum);
+  // 4) Resumen arriba (si falta) — versión ES + mejor ubicación
+{
+  const head = root.querySelector(".wb-head");
+  if (head) {
+    let sum = head.querySelector("#wbSummary");
+    if (!sum) {
+      sum = document.createElement("div");
+      sum.id = "wbSummary";
+      sum.className = "wb-summary";
+      sum.textContent = "Activos: 0 (Atrás 0 • Frente 0 • Caja 0)";
+      // Insertar antes del botón Publish (o de la X si no existe)
+      const anchor = head.querySelector(".publish-top") || head.querySelector(".close-x");
+      if (anchor) head.insertBefore(sum, anchor); else head.appendChild(sum);
+    } else {
+      // Si ya existe, poner texto base en ES
+      sum.textContent = "Activos: 0 (Atrás 0 • Frente 0 • Caja 0)";
     }
+  }
+}
 
     // 5) Carga de schedules (limitada) y pintado
     await runLimited(__wbEmployees, 4, async (emp)=>{

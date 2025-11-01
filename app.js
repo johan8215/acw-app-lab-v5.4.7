@@ -150,7 +150,10 @@ async function showWelcome(name, role) {
   $("#welcomeName").innerHTML = `<b>${name}</b>`;
   safeText($("#welcomeRole"), role || "");
 
-  if (isManagerRole(role)) addTeamButton();
+  if (isManagerRole(role)) {
+  addTeamButton();              // el botón de Team View
+  window.addWeeklyButton?.();   // ← crea el botón “Weekly (beta)” si el módulo ya cargó
+}
 
   // Teléfono del usuario (usando caché de directorio)
   try {

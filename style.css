@@ -311,3 +311,12 @@ tr.today td{
   `;
   document.head.appendChild(s);
 })();
+
+/* Opción A: separar bordes SOLO en esta tabla */
+.tv-table { border-collapse: separate; border-spacing: 0; }
+
+/* Opción B: pintar el borde en el primer <td> */
+.tv-table tr.role-manager > td:first-child     { border-left:6px solid var(--role-mgr); }
+.tv-table tr.role-supervisor > td:first-child  { border-left:6px solid var(--role-sup); }
+.tv-table tr.role-driver > td:first-child      { border-left:6px solid var(--role-drv); }
+.tv-table tr.role-crew > td:first-child        { border-left:6px solid var(--role-crw); }

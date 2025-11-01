@@ -1560,119 +1560,87 @@ async function loadWeeklyData(root){
     __wbAbort?.abort();
     __wbAbort = new AbortController();
 
-    // 1) Trae directorio una sola vez y fija el orden canónico del Sheet
-   const dir = await API.getDirectory(__wbAbort);
-__wbEmployees = (dir?.directory||[]).slice().sort(bySheetOrder);
+    // 1) Directorio y orden canónico
+    const dir = await API.getDirectory(__wbAbort);
+    __wbEmployees = (dir?.directory||[]).slice().sort(bySheetOrder);
 
-// ← calcula grupo por empleado y crea contadores
-const __groupOf = computeGroups(__wbEmployees);
-__counts = { back:0, front:0, cash:0, total:0 };
+    // 2) Grupos + contadores
+    const __groupOf = computeGroups(__wbEmployees);
+    __counts = { back:0, front:0, cash:0, total:0 }; // <- reasigna (sin let)
 
-// Inserta una fila de cabecera por grupo cuando toque
-function groupHeaderHTML(key){
-  const m = GROUP_MARKERS[key];
-  return `<tr class="wb-group-row"><th colspan="10">
-    <span class="wb-group-badge wb-badge-${key}">${m.label}</span>
-    <span style="margin-left:10px;opacity:.75">Activos: <b id="cnt-${key}">0</b></span>
-  </th></tr>`;
-}
+    function groupHeaderHTML(key){
+      const m = GROUP_MARKERS[key];
+      return `<tr class="wb-group-row"><th colspan="10">
+        <span class="wb-group-badge wb-badge-${key}">${m.label}</span>
+        <span style="margin-left:10px;opacity:.75">Activos: <b id="cnt-${key}">0</b></span>
+      </th></tr>`;
+    }
 
-// Render inicial del cuerpo con headers de grupo + filas
-let html = "";
-let lastGroup = null;
-__wbEmployees.forEach(emp=>{
-  const g = __groupOf.get(emp.email) || "other";
-  if (g !== lastGroup && g!=="other"){
-    html += groupHeaderHTML(g);
-    lastGroup = g;
-  }
-  html += `
-    <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}" data-group="${g}">
-      <td>
-        <div class="wb-name">
-          <span class="wb-initial">${fmtInit(emp.name)}</span>
-          <div>
-            <div style="font-weight:700">${emp.name}
-              ${g!=="other" ? `<span class="wb-chip wb-chip-${g}">${GROUP_MARKERS[g].label}</span>` : ""}
+    // 3) Render con headers por grupo
+    let html = "";
+    let lastGroup = null;
+    for (const emp of __wbEmployees){
+      const g = __groupOf.get(emp.email) || "other";
+      if (g !== lastGroup && g !== "other"){ html += groupHeaderHTML(g); lastGroup = g; }
+      html += `
+        <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}" data-group="${g}" data-role="${(emp.role||'').toLowerCase()}">
+          <td>
+            <div class="wb-name">
+              <span class="wb-initial">${fmtInit(emp.name)}</span>
+              <div>
+                <div style="font-weight:700">${emp.name}
+                  ${g!=="other" ? `<span class="wb-chip wb-chip-${g}">${GROUP_MARKERS[g].label}</span>` : ""}
+                </div>
+                <small style="opacity:.7">${emp.role||""}</small>
+              </div>
             </div>
-            <small style="opacity:.7">${emp.role||""}</small>
-          </div>
-        </div>
-      </td>
-      ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
-      <td class="wb-total">0.0</td>
-      <td class="wb-tools">
-        <button class="save-row">Save row</button>
-        <button class="send alt"  data-act="sendtoday">Send Today</button>
-        <button class="send"      data-act="sendtomorrow">Send Tomorrow</button>
-      </td>
-    </tr>
-  `;
-});
-tbody.innerHTML = html;
+          </td>
+          ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
+          <td class="wb-total">0.0</td>
+          <td class="wb-tools">
+            <button class="save-row">Save row</button>
+            <button class="send alt"  data-act="sendtoday">Send Today</button>
+            <button class="send"      data-act="sendtomorrow">Send Tomorrow</button>
+          </td>
+        </tr>
+      `;
+    }
+    tbody.innerHTML = html;
 
-// Resumen arriba (derecha del header)
-const head = root.querySelector(".wb-head");
-if (head && !head.querySelector(".wb-summary")){
-  const sum = document.createElement("div");
-  sum.className = "wb-summary";
-  sum.id = "wbSummary";
-  sum.textContent = "Activos: 0 (Back 0 • Front 0 • Cash 0)";
-  head.appendChild(sum);
-} 
+    // 4) Resumen arriba (si falta)
+    const head = root.querySelector(".wb-head");
+    if (head && !head.querySelector("#wbSummary")){
+      const sum = document.createElement("div");
+      sum.id = "wbSummary"; sum.className = "wb-summary";
+      sum.textContent = "Activos: 0 (Back 0 • Front 0 • Cash 0)";
+      head.appendChild(sum);
+    }
 
-    // 2) Pinta filas base
-      <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">
-        <td>
-          <div class="wb-name">
-            <span class="wb-initial">${fmtInit(emp.name)}</span>
-            <div>
-              <div style="font-weight:700">${emp.name}</div>
-              <small style="opacity:.7">${emp.role||""}</small>
-            </div>
-          </div>
-        </td>
-        ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
-        <td class="wb-total">0.0</td>
-        <td class="wb-tools">
-          <button class="save-row">Save row</button>
-        </td>
-      </tr>
-    `).join("");
-
-    // 3) Carga schedules en paralelo (limitado) y pinta
+    // 5) Carga de schedules (limitada) y pintado
     await runLimited(__wbEmployees, 4, async (emp)=>{
       const d = await API.getSchedule(emp.email, __wbOffset, __wbAbort);
-      if (!d?.ok) return;
-      __wbData.set(emp.email, d);
-      paintRow(emp.email, d);
+      if (d?.ok){ __wbData.set(emp.email, d); paintRow(emp.email, d); }
     });
 
-    // 4) Week label
+    // 6) Week label
     const any = __wbData.values().next().value;
-    if (any?.weekLabel) {
+    if (any?.weekLabel){
       root.querySelector(".wb-week-label").textContent =
         `${any.weekLabel} ${__wbOffset ? `(Week ${-__wbOffset})` : '(current)'}`;
     }
 
-    // 5) Binds de edición y guardado por fila
+    // 7) Binds de edición y acciones (una sola pasada)
     tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
       tr.querySelectorAll(".wb-cell").forEach((cell, idx)=>{
         cell.dataset.day = DKEY[idx];
         cell.addEventListener("input", ()=> markChanged(tr.dataset.email, cell));
         cell.addEventListener("blur",  ()=> trimCell(cell));
-        cell.addEventListener("keydown", (ev)=>{
-          if (ev.key==="Enter"){ ev.preventDefault(); cell.blur(); }
-        });
+        cell.addEventListener("keydown", ev=>{ if (ev.key==="Enter"){ ev.preventDefault(); cell.blur(); }});
       });
       tr.querySelector(".save-row").onclick = ()=> saveRow(tr.dataset.email);
-       // Bind de envío (WhatsApp) por fila
-tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
-  const email = tr.dataset.email;
-  tr.querySelectorAll(".wb-tools .send").forEach(btn=>{
-    btn.onclick = ()=> sendShiftMessage(email, btn.dataset.act);
-  });
-});
+      tr.querySelectorAll(".wb-tools .send").forEach(btn=>{
+        btn.onclick = ()=> sendShiftMessage(tr.dataset.email, btn.dataset.act);
+      });
     });
 
   }catch(e){

@@ -315,8 +315,30 @@ tr.today td{
 /* Opción A: separar bordes SOLO en esta tabla */
 .tv-table { border-collapse: separate; border-spacing: 0; }
 
-/* Opción B: pintar el borde en el primer <td> */
-.tv-table tr.role-manager > td:first-child     { border-left:6px solid var(--role-mgr); }
-.tv-table tr.role-supervisor > td:first-child  { border-left:6px solid var(--role-sup); }
-.tv-table tr.role-driver > td:first-child      { border-left:6px solid var(--role-drv); }
-.tv-table tr.role-crew > td:first-child        { border-left:6px solid var(--role-crw); }
+/* === Share button rojo (CSS puro) === */
+.acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.acwh-share{
+  background:#ff3b30; color:#fff; border:none; border-radius:10px;
+  padding:6px 10px; font-weight:800; cursor:pointer;
+  box-shadow:0 2px 10px rgba(255,59,48,.35);
+}
+.acwh-share:active{ transform:translateY(1px); }
+
+/* Fallbacks de roles si no carga el helper */
+:root{
+  --role-mgr:#0d6efd;   /* azul manager */
+  --role-sup:#6f42c1;   /* morado supervisor */
+  --role-drv:#f59e0b;   /* ámbar driver */
+  --role-crw:#607d8b;   /* gris crew/otros */
+}
+
+/* Bordes por rol (Opción B) */
+.tv-table tr.role-manager > td:first-child    { border-left:6px solid var(--role-mgr); }
+.tv-table tr.role-supervisor > td:first-child { border-left:6px solid var(--role-sup); }
+.tv-table tr.role-driver > td:first-child     { border-left:6px solid var(--role-drv); }
+.tv-table tr.role-crew > td:first-child       { border-left:6px solid var(--role-crw); }
+
+/* Para que el borde no se “coma” con collapse */
+.tv-table { border-collapse: separate; border-spacing: 0; }
+
+

@@ -443,7 +443,17 @@ function renderTeamViewPage() {
     transition: "all 0.35s ease"
   });
 
-  box.innerHTML = `
+  box.innerHTML = 
+     `  body.innerHTML = slice.map(emp => `
+    <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
+      <td><b>${emp.name}</b></td>
+      <td class="tv-hours">—</td>
+      <td class="tv-live">—</td>
+      <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
+    </tr>`).join("");
+
+// 👉 Decorar filas con colores/chip por rol
+  ACWRoles?.decorateRows(box);
     <div class="tv-head" style="display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;color:#0078ff;text-shadow:0 0 8px rgba(0,120,255,0.25);">Team View</h3>
       <button class="tv-close" onclick="toggleTeamOverview()" style="background:none;border:none;font-size:22px;cursor:pointer;">✖️</button>

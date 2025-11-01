@@ -1622,7 +1622,6 @@ if (head && !head.querySelector(".wb-summary")){
 } 
 
     // 2) Pinta filas base
-    tbody.innerHTML = __wbEmployees.map(emp => `
       <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">
         <td>
           <div class="wb-name">

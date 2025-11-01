@@ -1474,12 +1474,15 @@ function bySheetOrder(a,b){
   document.head.appendChild(s);
 })();
 
-  /* ---------- Estado ---------- */
-  let __wbOffset = 0;
-  let __wbEmployees = [];
-  let __wbData = new Map();         // email -> {days,total}
-  let __wbChanges = new Map();      // email -> { MON: '7:30 - 3:30', ... }
-  let __wbAbort = null;
+ /* ---------- Estado ---------- */
+let __wbOffset   = 0;
+let __wbEmployees = [];
+let __wbData      = new Map();   // email -> {days,total}
+let __wbChanges   = new Map();   // email -> { Mon:'7:30 - 3:30', ... }
+let __wbAbort     = null;
+
+// Contadores por grupo (para el resumen)
+let __counts = { back:0, front:0, cash:0, total:0 };
 
   const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
   const DKEY = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];

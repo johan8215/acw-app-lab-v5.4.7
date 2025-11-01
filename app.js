@@ -1519,7 +1519,9 @@ function bySheetOrder(a,b){
       __wbAbort = new AbortController();
 
       const dir = await API.getDirectory(__wbAbort);
-      __wbEmployees = (dir?.directory||[]).slice().sort((a,b)=> a.name.localeCompare(b.name));
+// 👇 fija y aplica orden del Sheet
+setSheetOrderFromDirectory(dir?.directory || []);
+__wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);
        const dir = await API.getDirectory();
 // 👇 guarda el orden canónico (por email / nombre)
 setSheetOrderFromDirectory(dir?.directory || []);

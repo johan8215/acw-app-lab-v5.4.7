@@ -1621,3 +1621,69 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     finally { publishBtn.disabled = false; publishBtn.textContent = "Publish all"; }
   }
 })();
+/* ========== ROLE SKINS (Drivers / Managers / Supervisors) ========== */
+(function ACW_RoleSkins(){
+  if (document.getElementById('acw-role-skins')) return;
+  const css = `
+    :root{
+      --role-mgr:#0d6efd;        /* azul manager */
+      --role-sup:#6f42c1;        /* morado supervisor */
+      --role-drv:#f59e0b;        /* ámbar driver */
+      --role-crw:#607d8b;        /* gris crew/otros */
+    }
+
+    /* Borde izquierdo de color por rol (Team View y tablas similares) */
+    .tv-table tr.role-manager,
+    table tr.role-manager { border-left:6px solid var(--role-mgr); }
+    .tv-table tr.role-supervisor,
+    table tr.role-supervisor { border-left:6px solid var(--role-sup); }
+    .tv-table tr.role-driver,
+    table tr.role-driver { border-left:6px solid var(--role-drv); }
+    .tv-table tr.role-crew,
+    table tr.role-crew { border-left:6px solid var(--role-crw); }
+
+    /* Chip compacto al lado del nombre */
+    .role-chip{
+      display:inline-block; margin-left:8px; padding:.25em .55em;
+      border-radius:999px; font-weight:700; font-size:.78em; line-height:1;
+      vertical-align:middle; user-select:none;
+    }
+    .role-manager .role-chip{ background:rgba(13,110,253,.12); color:var(--role-mgr); }
+    .role-supervisor .role-chip{ background:rgba(111,66,193,.12); color:var(--role-sup); }
+    .role-driver .role-chip{ background:rgba(245,158,11,.14); color:#b45309; }
+    .role-crew .role-chip{ background:rgba(96,125,139,.14); color:#37474f; }
+  `;
+  const s = document.createElement('style'); s.id='acw-role-skins'; s.textContent = css;
+  document.head.appendChild(s);
+
+  function normalizeRole(r){
+    const x = String(r||'').toLowerCase();
+    if (/manag|mgr/.test(x)) return 'manager';
+    if (/super|sup/.test(x)) return 'supervisor';
+    if (/driver|drive|driv/.test(x)) return 'driver';  // “drives” incluido
+    return 'crew';
+  }
+  function chipHTML(kind){
+    const label = kind==='manager'?'Manager'
+                 :kind==='supervisor'?'Supervisor'
+                 :kind==='driver'?'Driver':'Crew';
+    const icon  = kind==='manager'?'🛠️': kind==='supervisor'?'⭐': kind==='driver'?'🚚':'👤';
+    return `<span class="role-chip">${icon} ${label}</span>`;
+  }
+
+  function decorateRows(root){
+    const rows = root.querySelectorAll('tr[data-role], .tv-table tr[data-role]');
+    rows.forEach(tr=>{
+      const kind = normalizeRole(tr.dataset.role);
+      tr.classList.remove('role-manager','role-supervisor','role-driver','role-crew');
+      tr.classList.add('role-'+kind);
+      const first = tr.cells && tr.cells[0];
+      if (first && !first.querySelector('.role-chip')){
+        first.insertAdjacentHTML('beforeend', chipHTML(kind));
+      }
+    });
+  }
+
+  // API pública para usar desde tus pantallas
+  window.ACWRoles = { decorateRows, normalizeRole };
+})();

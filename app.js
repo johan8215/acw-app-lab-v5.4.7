@@ -1714,19 +1714,42 @@ tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
   }
 }
 
-  function paintRow(email, data){
-    const tr = document.getElementById(`wb-${cssEscape(email)}`); if (!tr) return;
-    const map = new Map((data.days||[]).map(d=>[dayKey(d.name), d]));
-    DAYS.forEach((dName, i)=>{
-      const d = map.get(DKEY[i]);
-      const td = tr.querySelectorAll(".wb-cell")[i];
-      const text = (d?.shift ?? "-");
-      td.textContent = text || "-";
-      td.classList.toggle("wb-off", /off/i.test(text));
-      td.classList.remove("changed");
-    });
-    tr.querySelector(".wb-total").textContent = (Number(data.total||0)).toFixed(1);
-  }
+function paintRow(email, data){
+  const tr = document.getElementById(`wb-${cssEscape(email)}`); 
+  if (!tr) return;
+
+  const map = new Map((data.days||[]).map(d=>[dayKey(d.name), d]));
+  DAYS.forEach((dName, i)=>{
+    const d = map.get(DKEY[i]);
+    const td = tr.querySelectorAll(".wb-cell")[i];
+    const text = (d?.shift ?? "-");
+    td.textContent = text || "-";
+    td.classList.toggle("wb-off", /off/i.test(text));
+    td.classList.remove("changed");
+  });
+  tr.querySelector(".wb-total").textContent = (Number(data.total||0)).toFixed(1);
+
+  // === contar activos por grupo y actualizar UI (¡adentro de la función!) ===
+  try{
+    const g   = tr.dataset.group || "other";
+    if (g !== "other"){
+      const now = isActiveWeek(data);                // tiene que existir la helper
+      const was = tr.dataset._active === "1";        // estado previo de la fila
+
+      if ( now && !was){ __counts[g]++; __counts.total++; }
+      if (!now &&  was){ __counts[g]--; __counts.total--; }
+
+      tr.dataset._active = now ? "1" : "0";
+
+      const upd = (k)=>{ const el = document.getElementById(`cnt-${k}`); if (el) el.textContent = __counts[k]; };
+      upd("back"); upd("front"); upd("cash");
+
+      const sum = document.getElementById("wbSummary");
+      if (sum) sum.textContent =
+        `Activos: ${__counts.total} (Back ${__counts.back} • Front ${__counts.front} • Cash ${__counts.cash})`;
+    }
+  }catch{}
+}
 
   function markChanged(email, cell){
     cell.classList.add("changed");

@@ -408,6 +408,7 @@ async function loadEmployeeDirectory() {
     __tvController = new AbortController();
 
     const j = await API.getDirectory(__tvController);
+     setSheetOrderFromDirectory(j.directory || []);
     if (!j?.ok) return;
 
     __teamList = j.directory || [];

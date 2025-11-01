@@ -1691,8 +1691,10 @@ function paintRow(email, data){
       upd("back"); upd("front"); upd("cash");
 
       const sum = document.getElementById("wbSummary");
-      if (sum) sum.textContent =
-        `Activos: ${__counts.total} (Back ${__counts.back} • Front ${__counts.front} • Cash ${__counts.cash})`;
+      if (sum) {
+        sum.textContent =
+          `Activos: ${__counts.total} (Atrás ${__counts.back} • Frente ${__counts.front} • Caja ${__counts.cash})`;
+      }
     }
   }catch{}
 }

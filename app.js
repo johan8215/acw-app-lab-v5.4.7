@@ -443,17 +443,8 @@ function renderTeamViewPage() {
     transition: "all 0.35s ease"
   });
 
-  box.innerHTML = 
-     `  body.innerHTML = slice.map(emp => `
-    <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
-      <td><b>${emp.name}</b></td>
-      <td class="tv-hours">—</td>
-      <td class="tv-live">—</td>
-      <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
-    </tr>`).join("");
-
-// 👉 Decorar filas con colores/chip por rol
-  ACWRoles?.decorateRows(box);
+  // ✅ SOLO el markup del modal aquí
+  box.innerHTML = `
     <div class="tv-head" style="display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;color:#0078ff;text-shadow:0 0 8px rgba(0,120,255,0.25);">Team View</h3>
       <button class="tv-close" onclick="toggleTeamOverview()" style="background:none;border:none;font-size:22px;cursor:pointer;">✖️</button>
@@ -468,25 +459,33 @@ function renderTeamViewPage() {
       <tbody id="tvBody"></tbody>
     </table>
   `;
-
   document.body.appendChild(box);
 
+  // ✅ Luego calculas y pintas las filas
   const start = __teamPage * TEAM_PAGE_SIZE;
   const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
   const body = $("#tvBody", box);
 
   body.innerHTML = slice.map(emp => `
     <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
-      <td><b>${emp.name}</b></td>
+      <td>
+        <span class="role-chip" data-role="${(emp.role||'').toLowerCase()}"></span>
+        <b>${emp.name}</b>
+      </td>
       <td class="tv-hours">—</td>
       <td class="tv-live">—</td>
       <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
-    </tr>`).join("");
+    </tr>
+  `).join("");
 
+  // 🎨 Colorea/etiqueta por rol (drivers, managers, supervisors)
+  ACWRoles?.decorateRows(box);
+
+  // Navegación
   $("#tvPrev", box).onclick = () => { __teamPage = Math.max(0, __teamPage - 1); renderTeamViewPage(); };
   $("#tvNext", box).onclick = () => { __teamPage = Math.min(Math.ceil(__teamList.length / TEAM_PAGE_SIZE) - 1, __teamPage + 1); renderTeamViewPage(); };
 
-  // Horas totales del slice con concurrencia limitada (4)
+  // Cálculo de horas y live (tu mismo código)
   const todayKey = Today.key;
   runLimited(slice, 4, async (emp)=>{
     try{
@@ -495,7 +494,6 @@ function renderTeamViewPage() {
       if (!tr) return;
       tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (Number(d.total || 0)).toFixed(1) : "0";
 
-      // Live
       const liveCell = tr.querySelector(".tv-live");
       const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===todayKey);
       if (!today?.shift){ liveCell.textContent="—"; return; }
@@ -516,14 +514,10 @@ function renderTeamViewPage() {
     }catch(e){}
   });
 
-  // Interval SOLO mientras Team View está visible (cada 2 min)
   if (__tvIntervalId){ clearInterval(__tvIntervalId); __tvIntervalId=null; }
   __tvIntervalId = setInterval(async ()=>{
     const rows = $all(".tv-table tr[data-email]", box);
-    const sliceNow = rows.map(r=>({
-      email: r.dataset.email, rowEl: r
-    }));
-    // actualiza live del slice usando caché de 60s
+    const sliceNow = rows.map(r=>({ email: r.dataset.email, rowEl: r }));
     await runLimited(sliceNow, 4, async (info)=>{
       const d = await API.getSchedule(info.email, 0, __tvController);
       const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===Today.key);
@@ -547,7 +541,7 @@ function renderTeamViewPage() {
     });
   }, 120000);
 
-  // Animación de aparición
+  // Aparición
   setTimeout(() => {
     box.style.visibility = "visible";
     box.style.opacity = "1";

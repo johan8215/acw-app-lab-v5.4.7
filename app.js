@@ -1699,6 +1699,13 @@ if (head && !head.querySelector(".wb-summary")){
         });
       });
       tr.querySelector(".save-row").onclick = ()=> saveRow(tr.dataset.email);
+       // Bind de envío (WhatsApp) por fila
+tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
+  const email = tr.dataset.email;
+  tr.querySelectorAll(".wb-tools .send").forEach(btn=>{
+    btn.onclick = ()=> sendShiftMessage(email, btn.dataset.act);
+  });
+});
     });
 
   }catch(e){

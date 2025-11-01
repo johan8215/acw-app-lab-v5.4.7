@@ -957,6 +957,26 @@ window.openHistoryFor   = (...args)=> openHistoryPicker(...args);
 
 console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: ${CONFIG?.BASE_URL||"<no-config>"}`);
 
+// === ORDEN CANÓNICO SEGÚN SHEETS ===
+let __sheetOrder = [];
+let __sheetOrderMap = new Map();
+
+function setSheetOrderFromDirectory(dir=[]) {
+  // Usa email como clave; si falta, cae a nombre
+  __sheetOrder = dir.map(e => String(e.email || e.name || "").toLowerCase());
+  __sheetOrderMap = new Map(__sheetOrder.map((k,i) => [k, i]));
+}
+function __idxBySheet(x){
+  const key = String(x.email || x.name || "").toLowerCase();
+  const i = __sheetOrderMap.get(key);
+  return (i === undefined) ? 1e9 : i;    // los que no están se van al final
+}
+function bySheetOrder(a,b){
+  const ai = (a.order ?? __idxBySheet(a));    // si el backend ya manda 'order', se usa
+  const bi = (b.order ?? __idxBySheet(b));
+  if (ai !== bi) return ai - bi;
+  return String(a.name||"").localeCompare(String(b.name||""));
+}
 /* =================== UI micro-fix (TV show class) =================== */
 (function(){
   const prev = typeof window.renderTeamViewPage==='function' ? window.renderTeamViewPage : null;

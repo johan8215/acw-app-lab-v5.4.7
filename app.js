@@ -1518,77 +1518,73 @@ function bySheetOrder(a,b){
     document.getElementById("wbOverlay")?.remove();
   }
 
-  /* ---------- Carga de datos ---------- */
-  async function loadWeeklyData(root){
-    const tbody = root.querySelector("#wbTbody");
-    tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;">Loading employees…</td></tr>`;
+/* ---------- Carga de datos ---------- */
+async function loadWeeklyData(root){
+  const tbody = root.querySelector("#wbTbody");
+  tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;">Loading employees…</td></tr>`;
 
-    try{
-      __wbAbort?.abort();
-      __wbAbort = new AbortController();
+  try{
+    __wbAbort?.abort();
+    __wbAbort = new AbortController();
 
-const dir = await API.getDirectory(__wbAbort);
-setSheetOrderFromDirectory(dir?.directory || []);            // ← fija orden
-__wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);  // ← aplica orden
-       const dir = await API.getDirectory();
-// 👇 guarda el orden canónico (por email / nombre)
-setSheetOrderFromDirectory(dir?.directory || []);
-     const dir = await API.getDirectory();
-setSheetOrderFromDirectory(dir?.directory || []);   // ← fija el orden del Sheet
-if (dir?.ok && Array.isArray(dir.directory)) {
-  ...
-}  
+    // 1) Trae directorio una sola vez y fija el orden canónico del Sheet
+    const dir = await API.getDirectory(__wbAbort);
+    setSheetOrderFromDirectory(dir?.directory || []);
+    __wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);
 
-      tbody.innerHTML = __wbEmployees.map(emp => `
-        <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">
-          <td>
-            <div class="wb-name">
-              <span class="wb-initial">${fmtInit(emp.name)}</span>
-              <div>
-                <div style="font-weight:700">${emp.name}</div>
-                <small style="opacity:.7">${emp.role||""}</small>
-              </div>
+    // 2) Pinta filas base
+    tbody.innerHTML = __wbEmployees.map(emp => `
+      <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">
+        <td>
+          <div class="wb-name">
+            <span class="wb-initial">${fmtInit(emp.name)}</span>
+            <div>
+              <div style="font-weight:700">${emp.name}</div>
+              <small style="opacity:.7">${emp.role||""}</small>
             </div>
-          </td>
-          ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
-          <td class="wb-total">0.0</td>
-          <td class="wb-tools">
-            <button class="save-row">Save row</button>
-          </td>
-        </tr>
-      `).join("");
+          </div>
+        </td>
+        ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
+        <td class="wb-total">0.0</td>
+        <td class="wb-tools">
+          <button class="save-row">Save row</button>
+        </td>
+      </tr>
+    `).join("");
 
-      // Carga en paralelo limitada
-      await runLimited(__wbEmployees, 4, async (emp)=>{
-        const d = await API.getSchedule(emp.email, __wbOffset, __wbAbort);
-        if (!d?.ok) return;
-        __wbData.set(emp.email, d);
-        paintRow(emp.email, d);
-      });
+    // 3) Carga schedules en paralelo (limitado) y pinta
+    await runLimited(__wbEmployees, 4, async (emp)=>{
+      const d = await API.getSchedule(emp.email, __wbOffset, __wbAbort);
+      if (!d?.ok) return;
+      __wbData.set(emp.email, d);
+      paintRow(emp.email, d);
+    });
 
-      // Week label
-      const any = __wbData.values().next().value;
-      if (any?.weekLabel) root.querySelector(".wb-week-label").textContent =
-        `${any.weekLabel} ${__wbOffset?`(Week ${-__wbOffset})`:'(current)'}`;
-
-      // Bind edición + save por fila
-      tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
-        tr.querySelectorAll(".wb-cell").forEach((cell, idx)=>{
-          cell.dataset.day = DKEY[idx];
-          cell.addEventListener("input", ()=> markChanged(tr.dataset.email, cell));
-          cell.addEventListener("blur",  ()=> trimCell(cell));
-          cell.addEventListener("keydown", (ev)=>{
-            if (ev.key==="Enter"){ ev.preventDefault(); cell.blur(); }
-          });
-        });
-        tr.querySelector(".save-row").onclick = ()=> saveRow(tr.dataset.email);
-      });
-
-    }catch(e){
-      console.warn(e);
-      tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;color:#c00">Error loading weekly board.</td></tr>`;
+    // 4) Week label
+    const any = __wbData.values().next().value;
+    if (any?.weekLabel) {
+      root.querySelector(".wb-week-label").textContent =
+        `${any.weekLabel} ${__wbOffset ? `(Week ${-__wbOffset})` : '(current)'}`;
     }
+
+    // 5) Binds de edición y guardado por fila
+    tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
+      tr.querySelectorAll(".wb-cell").forEach((cell, idx)=>{
+        cell.dataset.day = DKEY[idx];
+        cell.addEventListener("input", ()=> markChanged(tr.dataset.email, cell));
+        cell.addEventListener("blur",  ()=> trimCell(cell));
+        cell.addEventListener("keydown", (ev)=>{
+          if (ev.key==="Enter"){ ev.preventDefault(); cell.blur(); }
+        });
+      });
+      tr.querySelector(".save-row").onclick = ()=> saveRow(tr.dataset.email);
+    });
+
+  }catch(e){
+    console.warn(e);
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;color:#c00">Error loading weekly board.</td></tr>`;
   }
+}
 
   function paintRow(email, data){
     const tr = document.getElementById(`wb-${cssEscape(email)}`); if (!tr) return;

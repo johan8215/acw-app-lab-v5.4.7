@@ -1566,7 +1566,7 @@ __wbEmployees = (dir?.directory||[]).slice().sort(bySheetOrder);
 
 // ← calcula grupo por empleado y crea contadores
 const __groupOf = computeGroups(__wbEmployees);
-let __counts = { back:0, front:0, cash:0, total:0 };
+__counts = { back:0, front:0, cash:0, total:0 };
 
 // Inserta una fila de cabecera por grupo cuando toque
 function groupHeaderHTML(key){

@@ -1593,9 +1593,65 @@ async function loadWeeklyData(root){
     __wbAbort = new AbortController();
 
     // 1) Trae directorio una sola vez y fija el orden canónico del Sheet
-    const dir = await API.getDirectory(__wbAbort);
-    setSheetOrderFromDirectory(dir?.directory || []);
-    __wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);
+   const dir = await API.getDirectory(__wbAbort);
+__wbEmployees = (dir?.directory||[]).slice().sort(bySheetOrder);
+
+// ← calcula grupo por empleado y crea contadores
+const __groupOf = computeGroups(__wbEmployees);
+let __counts = { back:0, front:0, cash:0, total:0 };
+
+// Inserta una fila de cabecera por grupo cuando toque
+function groupHeaderHTML(key){
+  const m = GROUP_MARKERS[key];
+  return `<tr class="wb-group-row"><th colspan="10">
+    <span class="wb-group-badge wb-badge-${key}">${m.label}</span>
+    <span style="margin-left:10px;opacity:.75">Activos: <b id="cnt-${key}">0</b></span>
+  </th></tr>`;
+}
+
+// Render inicial del cuerpo con headers de grupo + filas
+let html = "";
+let lastGroup = null;
+__wbEmployees.forEach(emp=>{
+  const g = __groupOf.get(emp.email) || "other";
+  if (g !== lastGroup && g!=="other"){
+    html += groupHeaderHTML(g);
+    lastGroup = g;
+  }
+  html += `
+    <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}" data-group="${g}">
+      <td>
+        <div class="wb-name">
+          <span class="wb-initial">${fmtInit(emp.name)}</span>
+          <div>
+            <div style="font-weight:700">${emp.name}
+              ${g!=="other" ? `<span class="wb-chip wb-chip-${g}">${GROUP_MARKERS[g].label}</span>` : ""}
+            </div>
+            <small style="opacity:.7">${emp.role||""}</small>
+          </div>
+        </div>
+      </td>
+      ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
+      <td class="wb-total">0.0</td>
+      <td class="wb-tools">
+        <button class="save-row">Save row</button>
+        <button class="send alt"  data-act="sendtoday">Send Today</button>
+        <button class="send"      data-act="sendtomorrow">Send Tomorrow</button>
+      </td>
+    </tr>
+  `;
+});
+tbody.innerHTML = html;
+
+// Resumen arriba (derecha del header)
+const head = root.querySelector(".wb-head");
+if (head && !head.querySelector(".wb-summary")){
+  const sum = document.createElement("div");
+  sum.className = "wb-summary";
+  sum.id = "wbSummary";
+  sum.textContent = "Activos: 0 (Back 0 • Front 0 • Cash 0)";
+  head.appendChild(sum);
+} 
 
     // 2) Pinta filas base
     tbody.innerHTML = __wbEmployees.map(emp => `

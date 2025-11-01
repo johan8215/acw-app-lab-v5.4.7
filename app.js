@@ -1358,3 +1358,263 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   `;
   document.head.appendChild(s);
 })();
+
+/* =============== WEEKLY BOARD (beta) – Blue Glass White =============== */
+(function(){
+  /* ---------- Botón flotante para Managers ---------- */
+  window.addWeeklyButton = function addWeeklyButton(){
+    if (document.getElementById("weeklyBtn")) return;
+    const b = document.createElement("button");
+    b.id = "weeklyBtn";
+    b.textContent = "Weekly (beta)";
+    Object.assign(b.style, {
+      position:"fixed", top:"12px", right:"132px", zIndex: 9999,
+      padding:"8px 12px", borderRadius:"12px", border:"0",
+      background:"#ff3b30", color:"#fff", fontWeight:"700",
+      boxShadow:"0 6px 16px rgba(255,59,48,.35)", cursor:"pointer"
+    });
+    b.onclick = ()=> openWeeklyBoard(0);
+    document.body.appendChild(b);
+  };
+
+  /* ---------- CSS ---------- */
+  (function ensureWBcss(){
+    if (document.getElementById("wb-css")) return;
+    const s = document.createElement("style"); s.id="wb-css"; s.textContent = `
+      #wbOverlay{position:fixed; inset:0; z-index:12000;
+        background:rgba(5,20,40,.25); backdrop-filter:blur(2px);
+        display:flex; align-items:center; justify-content:center;}
+      .wb-card{width:min(1200px,94vw); max-height:86vh; overflow:hidden;
+        background:#fff; border-radius:16px; box-shadow:0 26px 80px rgba(0,120,255,.25);}
+      .wb-head{display:flex; align-items:center; gap:10px; padding:14px 16px;
+        border-bottom:1px solid rgba(0,0,0,.06);}
+      .wb-head h3{margin:0; font-size:18px; color:#0a56cc;}
+      .wb-head .spacer{flex:1;}
+      .wb-head .pill{background:#ff3b30; color:#fff; border:0; font-weight:700;
+        padding:6px 10px; border-radius:10px; box-shadow:0 2px 8px rgba(255,59,48,.35); cursor:pointer;}
+      .wb-body{overflow:auto; max-height:calc(86vh - 62px);}
+      .wb-table{width:100%; border-collapse:separate; border-spacing:0;}
+      .wb-table th, .wb-table td{padding:10px 12px; border-bottom:1px solid #eef2f6;}
+      .wb-table thead th{position:sticky; top:0; background:#f9fbff; z-index:1;
+        font-weight:700; color:#0a56cc; border-bottom:1px solid #e6eefc;}
+      .wb-name{display:flex; align-items:center; gap:8px; white-space:nowrap;}
+      .wb-initial{width:24px; height:24px; border-radius:50%; display:inline-grid; place-items:center;
+        background:#e6f0ff; color:#0a56cc; font-weight:700; font-size:12px;}
+      .wb-cell[contenteditable="true"]{outline:none; border-radius:8px;}
+      .wb-cell[contenteditable="true"]:focus{background:#eef6ff; box-shadow:inset 0 0 0 2px #bcd9ff;}
+      .wb-cell.changed{background:#fff7cc !important;}
+      .wb-off{color:#9aa3ad;}
+      .wb-total{font-weight:800; color:#e60000; text-align:right;}
+      .wb-tools button{border:0; background:#f2f6ff; color:#0a56cc; font-weight:700; padding:6px 10px; border-radius:8px; cursor:pointer;}
+      .wb-tools .save-row{background:#00b341; color:#fff;}
+      .wb-foot{display:flex; gap:10px; justify-content:flex-end; padding:10px 14px; border-top:1px solid #eef2f6;}
+      .wb-foot .publish{background:#00b341; color:#fff; border:0; padding:8px 12px; border-radius:10px; font-weight:800; cursor:pointer;}
+      .wb-foot .close{background:#f2f6ff; color:#0a56cc; border:0; padding:8px 12px; border-radius:10px; font-weight:800; cursor:pointer;}
+    `;
+    document.head.appendChild(s);
+  })();
+
+  /* ---------- Estado ---------- */
+  let __wbOffset = 0;
+  let __wbEmployees = [];
+  let __wbData = new Map();         // email -> {days,total}
+  let __wbChanges = new Map();      // email -> { MON: '7:30 - 3:30', ... }
+  let __wbAbort = null;
+
+  const DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+  const DKEY = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+
+  function dayKey(name){ return name.slice(0,3); }
+  function fmtInit(n){ return (n||"?").split(/\s+/).map(p=>p[0]||"").join("").slice(0,2).toUpperCase(); }
+
+  /* ---------- Abrir/Cerrar ---------- */
+  window.openWeeklyBoard = async function openWeeklyBoard(offset=0){
+    __wbOffset = offset|0; __wbChanges.clear();
+    document.getElementById("wbOverlay")?.remove();
+
+    const overlay = document.createElement("div"); overlay.id="wbOverlay";
+    overlay.innerHTML = `
+      <div class="wb-card">
+        <div class="wb-head">
+          <button class="pill" data-nav="-1">‹ Week</button>
+          <h3>Weekly Board</h3>
+          <div class="spacer"></div>
+          <div class="wb-week-label" style="font-weight:700; color:#0a56cc;">Loading…</div>
+          <button class="pill publish-top" title="Publish all pending" style="display:none;">Publish</button>
+          <button class="pill close-x" style="background:#f2f6ff;color:#0a56cc;">×</button>
+        </div>
+        <div class="wb-body">
+          <table class="wb-table">
+            <thead>
+              <tr>
+                <th style="width:220px;">Employee</th>
+                ${DAYS.map(d=>`<th>${d}</th>`).join("")}
+                <th style="width:90px; text-align:right;">Total</th>
+                <th style="width:120px;">Tools</th>
+              </tr>
+            </thead>
+            <tbody id="wbTbody"><tr><td colspan="10" style="padding:18px;">Loading directory…</td></tr></tbody>
+          </table>
+        </div>
+        <div class="wb-foot">
+          <button class="publish">Publish all</button>
+          <button class="close">Close</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    overlay.addEventListener("click", (e)=>{ if(e.target===overlay) closeWB(); });
+    overlay.querySelector(".close")  .onclick = closeWB;
+    overlay.querySelector(".close-x").onclick = closeWB;
+    overlay.querySelector('[data-nav="-1"]').onclick = ()=> openWeeklyBoard(__wbOffset+1); // Week -1
+    overlay.querySelector(".publish").onclick = publishAll;
+    overlay.querySelector(".publish-top").onclick = publishAll;
+
+    await loadWeeklyData(overlay);
+  };
+
+  function closeWB(){
+    try{ __wbAbort?.abort(); }catch{}
+    __wbAbort = null;
+    document.getElementById("wbOverlay")?.remove();
+  }
+
+  /* ---------- Carga de datos ---------- */
+  async function loadWeeklyData(root){
+    const tbody = root.querySelector("#wbTbody");
+    tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;">Loading employees…</td></tr>`;
+
+    try{
+      __wbAbort?.abort();
+      __wbAbort = new AbortController();
+
+      const dir = await API.getDirectory(__wbAbort);
+      __wbEmployees = (dir?.directory||[]).slice().sort((a,b)=> a.name.localeCompare(b.name));
+
+      tbody.innerHTML = __wbEmployees.map(emp => `
+        <tr id="wb-${cssEscape(emp.email)}" data-email="${emp.email}">
+          <td>
+            <div class="wb-name">
+              <span class="wb-initial">${fmtInit(emp.name)}</span>
+              <div>
+                <div style="font-weight:700">${emp.name}</div>
+                <small style="opacity:.7">${emp.role||""}</small>
+              </div>
+            </div>
+          </td>
+          ${DAYS.map(()=>`<td class="wb-cell" contenteditable="true">—</td>`).join("")}
+          <td class="wb-total">0.0</td>
+          <td class="wb-tools">
+            <button class="save-row">Save row</button>
+          </td>
+        </tr>
+      `).join("");
+
+      // Carga en paralelo limitada
+      await runLimited(__wbEmployees, 4, async (emp)=>{
+        const d = await API.getSchedule(emp.email, __wbOffset, __wbAbort);
+        if (!d?.ok) return;
+        __wbData.set(emp.email, d);
+        paintRow(emp.email, d);
+      });
+
+      // Week label
+      const any = __wbData.values().next().value;
+      if (any?.weekLabel) root.querySelector(".wb-week-label").textContent =
+        `${any.weekLabel} ${__wbOffset?`(Week ${-__wbOffset})`:'(current)'}`;
+
+      // Bind edición + save por fila
+      tbody.querySelectorAll("tr[data-email]").forEach(tr=>{
+        tr.querySelectorAll(".wb-cell").forEach((cell, idx)=>{
+          cell.dataset.day = DKEY[idx];
+          cell.addEventListener("input", ()=> markChanged(tr.dataset.email, cell));
+          cell.addEventListener("blur",  ()=> trimCell(cell));
+          cell.addEventListener("keydown", (ev)=>{
+            if (ev.key==="Enter"){ ev.preventDefault(); cell.blur(); }
+          });
+        });
+        tr.querySelector(".save-row").onclick = ()=> saveRow(tr.dataset.email);
+      });
+
+    }catch(e){
+      console.warn(e);
+      tbody.innerHTML = `<tr><td colspan="10" style="padding:14px;color:#c00">Error loading weekly board.</td></tr>`;
+    }
+  }
+
+  function paintRow(email, data){
+    const tr = document.getElementById(`wb-${cssEscape(email)}`); if (!tr) return;
+    const map = new Map((data.days||[]).map(d=>[dayKey(d.name), d]));
+    DAYS.forEach((dName, i)=>{
+      const d = map.get(DKEY[i]);
+      const td = tr.querySelectorAll(".wb-cell")[i];
+      const text = (d?.shift ?? "-");
+      td.textContent = text || "-";
+      td.classList.toggle("wb-off", /off/i.test(text));
+      td.classList.remove("changed");
+    });
+    tr.querySelector(".wb-total").textContent = (Number(data.total||0)).toFixed(1);
+  }
+
+  function markChanged(email, cell){
+    cell.classList.add("changed");
+    const day = cell.dataset.day; const newShift = cell.textContent.trim();
+    let bag = __wbChanges.get(email); if (!bag) { bag = {}; __wbChanges.set(email, bag); }
+    bag[day] = newShift;
+    // Mostrar botón Publish si hay cambios
+    const has = __wbChanges.size>0;
+    document.querySelector(".publish-top")?.style?.setProperty("display", has?"inline-block":"none");
+  }
+  function trimCell(cell){ cell.textContent = cell.textContent.replace(/\s+/g," ").trim(); }
+
+  /* ---------- Guardar ---------- */
+  async function saveRow(email){
+    const bag = __wbChanges.get(email);
+    if (!bag || !Object.keys(bag).length){ toast && toast("ℹ️ No changes in this row","info"); return; }
+
+    const tr = document.getElementById(`wb-${cssEscape(email)}`);
+    const btn = tr?.querySelector(".save-row");
+    if (btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+
+    try{
+      const actor = (window.currentUser?.email) || "";
+      let ok = 0, total = Object.keys(bag).length;
+      for (const [day, shift] of Object.entries(bag)){
+        const u = `${CONFIG.BASE_URL}?action=updateShift&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(email)}&day=${encodeURIComponent(day)}&shift=${encodeURIComponent(shift)}`;
+        const r = await fetch(u, {cache:"no-store"}); const j = await r.json();
+        if (j?.ok) ok++;
+      }
+      if (ok===total){ toast && toast("✅ Row saved","success"); __wbChanges.delete(email); }
+      else { toast && toast("⚠️ Some cells failed","error"); }
+
+      // Refresca fila desde server para horas reales
+      const d = await API.getSchedule(email, __wbOffset);
+      if (d?.ok) { __wbData.set(email, d); paintRow(email, d); }
+
+    }catch(e){ console.warn(e); toast && toast("❌ Save error","error"); }
+    finally { if (btn){ btn.disabled=false; btn.textContent="Save row"; } }
+  }
+
+  async function publishAll(){
+    if (__wbChanges.size===0){ toast && toast("ℹ️ Nothing to publish","info"); return; }
+    const publishBtn = document.querySelector(".wb-foot .publish");
+    publishBtn.disabled = true; publishBtn.textContent = "Publishing…";
+
+    const entries = [...__wbChanges.entries()];
+    try{
+      await runLimited(entries, 2, async ([email, bag])=>{
+        const actor = (window.currentUser?.email) || "";
+        for (const [day, shift] of Object.entries(bag)){
+          const u = `${CONFIG.BASE_URL}?action=updateShift&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(email)}&day=${encodeURIComponent(day)}&shift=${encodeURIComponent(shift)}`;
+          try{ await fetch(u, {cache:"no-store"}).then(r=>r.json()); }catch{}
+        }
+        const d = await API.getSchedule(email, __wbOffset);
+        if (d?.ok){ __wbData.set(email, d); paintRow(email, d); }
+      });
+      __wbChanges.clear();
+      document.querySelector(".publish-top")?.style?.setProperty("display","none");
+      toast && toast("✅ Published all","success");
+    }catch(e){ console.warn(e); toast && toast("❌ Publish failed","error"); }
+    finally { publishBtn.disabled = false; publishBtn.textContent = "Publish all"; }
+  }
+})();

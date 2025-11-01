@@ -1452,6 +1452,27 @@ function bySheetOrder(a,b){
     `;
     document.head.appendChild(s);
   })();
+   /* === Weekly groups skin === */
+(function ensureWBGroupCSS(){
+  if (document.getElementById("wb-groups-css")) return;
+  const s = document.createElement("style"); s.id="wb-groups-css";
+  s.textContent = `
+    .wb-group-row{ background:#f9fbff; position:sticky; top:42px; z-index:2; }
+    .wb-group-row th{ text-align:left; padding:8px 12px; color:#0a56cc; border-bottom:1px solid #e6eefc; }
+    .wb-group-badge{ display:inline-block; font-weight:800; padding:4px 8px; border-radius:10px; color:#fff; }
+    .wb-badge-back { background:#0a56cc; }
+    .wb-badge-front{ background:#f59e0b; }
+    .wb-badge-cash { background:#6f42c1; }
+    .wb-chip{ margin-left:8px; padding:.25em .55em; border-radius:999px; font-size:.78em; font-weight:700; }
+    .wb-chip-back { background:rgba(10,86,204,.12); color:#0a56cc; }
+    .wb-chip-front{ background:rgba(245,158,11,.14); color:#b45309; }
+    .wb-chip-cash { background:rgba(111,66,193,.12); color:#6f42c1; }
+    .wb-summary{ margin-left:auto; font-weight:800; color:#0a56cc; }
+    .wb-tools .send{ background:#00b341; color:#fff; margin-left:6px; }
+    .wb-tools .send.alt{ background:#007bff; }
+  `;
+  document.head.appendChild(s);
+})();
 
   /* ---------- Estado ---------- */
   let __wbOffset = 0;

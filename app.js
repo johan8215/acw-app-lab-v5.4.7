@@ -962,11 +962,20 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
 // === ORDEN CANÓNICO SEGÚN SHEETS ===
 let __sheetOrder = [];
 let __sheetOrderMap = new Map();
+// Boot: intenta cargar orden guardado
+try{
+  const saved = JSON.parse(localStorage.getItem("acwSheetOrder") || "[]");
+  if (saved.length){
+    __sheetOrder = saved;
+    __sheetOrderMap = new Map(saved.map((k,i)=>[k,i]));
+  }
+}catch{}
 
 function setSheetOrderFromDirectory(dir=[]) {
   // Usa email como clave; si falta, cae a nombre
   __sheetOrder = dir.map(e => String(e.email || e.name || "").toLowerCase());
   __sheetOrderMap = new Map(__sheetOrder.map((k,i) => [k, i]));
+   try{ localStorage.setItem("acwSheetOrder", JSON.stringify(__sheetOrder)); }catch{}
 }
 function __idxBySheet(x){
   const key = String(x.email || x.name || "").toLowerCase();

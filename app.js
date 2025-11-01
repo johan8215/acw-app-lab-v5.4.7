@@ -310,6 +310,40 @@ function logoutUser(){
   toast("👋 Logged out", "info");
   setTimeout(()=>location.reload(), 500);
 }
+(function ensureShareCSS(){
+  if (document.getElementById('acw-share-css')) return;
+  const s = document.createElement('style'); s.id = 'acw-share-css';
+  s.textContent = `
+    /* Botón Share junto a la X */
+    .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .acwh-head .acwh-share{
+      background:#ff4d4f; color:#fff; border:0; border-radius:10px;
+      padding:6px 10px; font-weight:700; cursor:pointer;
+      box-shadow:0 2px 8px rgba(255,77,79,.35);
+    }
+    .acwh-head .acwh-share:active{ transform:translateY(1px); }
+
+    /* MODO NÍTIDO PARA CAPTURA */
+    #acwhOverlay[data-share="1"]{
+      background: transparent !important;
+      backdrop-filter: none !important;
+      filter: none !important;
+    }
+    #acwhOverlay[data-share="1"] .acwh-card{
+      background:#ffffff !important;
+      opacity:1 !important;
+      filter:none !important;
+      backdrop-filter:none !important;
+      box-shadow:none !important; /* evita velo gris */
+    }
+    /* por si algún hijo tiene opacidades/filtros */
+    #acwhOverlay[data-share="1"] .acwh-card *{
+      opacity:1 !important;
+      filter:none !important;
+    }
+  `;
+  document.head.appendChild(s);
+})();
 
 /* =================== CHANGE PASSWORD =================== */
 async function submitChangePassword() {
@@ -741,9 +775,91 @@ function openHistoryPicker(email, name="My History"){
       </div>
     </div>`;
   document.body.appendChild(overlay);
+   __attachHistoryShare(overlay);
   overlay.querySelector(".acwh-close").onclick = () => overlay.remove();
   overlay.addEventListener("click", e=>{ if(e.target===overlay) overlay.remove(); });
   renderHistoryPickerList(email, name, overlay);
+}
+
+// Botón Share pegado a la X (se crea una sola vez por overlay)
+function __attachHistoryShare(root = document){
+  const head = root.querySelector('.acwh-head');
+  if (!head) return;
+
+  let btn = head.querySelector('.acwh-share');
+  if (!btn){
+    btn = document.createElement('button');
+    btn.className = 'acwh-share';
+    btn.type = 'button';
+    btn.textContent = 'Share';
+    // lo insertamos justo antes de la X
+    head.insertBefore(btn, head.querySelector('.acwh-close') || null);
+  }
+
+  // acción del botón
+  btn.onclick = async ()=>{
+    const overlay = root.closest('#acwhOverlay') || root;
+    const card    = overlay.querySelector('.acwh-card') || overlay;
+    const title   = overlay.querySelector('.acwh-title')?.textContent?.trim() || 'History';
+    const who     = overlay.querySelector('.acwh-sub')?.textContent?.trim() || (currentUser?.name || 'ACW');
+
+    // Modo nítido SOLO durante la captura
+    overlay.setAttribute('data-share','1');
+    await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)));
+
+    try{
+      await __shareElAsImage(card, `${who} — ${title}.png`);
+    } finally {
+      overlay.removeAttribute('data-share');
+    }
+  };
+} // <-- este cierre faltaba
+
+// === SHARE (fallback claro y seguro) ===
+async function __ensureH2C(){
+  if (window.html2canvas) return;
+  await new Promise((ok, fail)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js';
+    s.onload = ok; s.onerror = ()=>fail(new Error('html2canvas load failed'));
+    document.head.appendChild(s);
+  });
+}
+
+async function __shareElAsImage(el, filename='acw.png'){
+  try{
+    await __ensureH2C();
+    const canvas = await html2canvas(el, {
+      backgroundColor: '#ffffff',
+      scale: Math.min(3, window.devicePixelRatio || 2),
+      useCORS: true
+    });
+    const blob = await new Promise(res => canvas.toBlob(res, 'image/png', 0.95));
+    const file = new File([blob], filename, { type: 'image/png' });
+
+    try{
+      if (navigator.canShare && navigator.canShare({ files:[file] })){
+        await navigator.share({ files:[file] });
+        toast('✅ Shared image','success'); 
+        return;
+      }
+    }catch{}
+
+    try{
+      if (navigator.clipboard && window.ClipboardItem){
+        await navigator.clipboard.write([ new ClipboardItem({ 'image/png': blob }) ]);
+        toast('📋 Image copied to clipboard','success'); 
+        return;
+      }
+    }catch{}
+
+    const url = URL.createObjectURL(blob);
+    window.open(url, '_blank');
+    toast('ℹ️ Opened image in new tab','info');
+  }catch(e){
+    console.warn('share error', e);
+    toast('❌ Share failed','error');
+  }
 }
 async function renderHistoryPickerList(email, name, root){
   const body = root.querySelector("#acwhBody");
@@ -767,6 +883,7 @@ async function renderHistoryPickerList(email, name, root){
   });
   root.querySelector(".acwh-title").textContent = "History (5 weeks)";
   root.querySelector(".acwh-sub").textContent   = String(name||"").toUpperCase();
+   __attachHistoryShare(root);
 }
 function renderHistoryDetailCentered(week, email, name, offset, root){
   const body = root.querySelector("#acwhBody");
@@ -796,7 +913,22 @@ function renderHistoryDetailCentered(week, email, name, offset, root){
     <div class="acwh-total-line">Total: ${Number(week.total||0).toFixed(1)}h</div>
   `;
   body.querySelector(".acwh-back").onclick = () => renderHistoryPickerList(email, name, root);
+   __attachHistoryShare(root);
 }
+(function(){
+  const id='acw-share-css';
+  if (document.getElementById(id)) return;
+  const s=document.createElement('style'); s.id=id;
+  s.textContent = `
+    .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+    .acwh-head .acwh-share{
+      background:#ff4d4f; border:none; color:#fff; font-weight:700;
+      padding:6px 10px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.15);
+    }
+    .acwh-head .acwh-share:active{ transform:scale(.98); }
+  `;
+  document.head.appendChild(s);
+})();
 
 /* =================== GLOBAL BINDS =================== */
 window.loginUser = loginUser;
@@ -919,7 +1051,6 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     }
   `);
 
-  // Crea el modal si no existe, con los IDs que usa submitChangePassword()
   function ensureChangePasswordModal(){
     let cp = document.getElementById('changePasswordModal');
     if (!cp){
@@ -940,7 +1071,6 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
           </div>
         </div>`;
       document.body.appendChild(cp);
-      // binds básicos
       cp.querySelector('.close').onclick = closeChangePassword2;
       cp.querySelector('#cpCancelBtn').onclick = closeChangePassword2;
       cp.addEventListener('click', (e)=>{ if (e.target === cp) closeChangePassword2(); });
@@ -954,23 +1084,15 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   function openChangePassword2(){
     const cp = ensureChangePasswordModal();
     const settings = document.getElementById('settingsModal');
-
-    // Recuerda si Settings estaba visible y ocúltalo para evitar overlays dobles
     if (settings){
       _settingsWasVisible = (settings.style.display !== 'none' && settings.offsetParent !== null);
       settings.style.display = 'none';
       settings.classList.remove('show');
     }
-
-    // Muestra el CP por encima de todo
     cp.style.zIndex = '13000';
     cp.classList.add('show');
-
-    // ESC para cerrar
     const onKey = (ev)=>{ if (ev.key === 'Escape') closeChangePassword2(); };
     document.addEventListener('keydown', onKey, { once:true });
-
-    // focus
     setTimeout(()=> document.getElementById('oldPass')?.focus(), 50);
   }
 
@@ -988,11 +1110,251 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     _settingsWasVisible = null;
   }
 
-  // Sobrescribe globales (sin tocar submitChangePassword)
   window.openChangePassword = openChangePassword2;
   window.closeChangePassword = closeChangePassword2;
 
-  // Si existe un botón #changePassBtn, engánchalo
   const btn = document.getElementById('changePassBtn');
   if (btn) btn.onclick = openChangePassword2;
+})();
+/* === ACW — History "Clean Skin" (solo estilos) === */
+(function(){
+  const id = 'acw-history-skin';
+  if (document.getElementById(id)) return;
+  const css = `
+  #acwhOverlay{
+    --acw-accent: #0a84ff;      /* azul títulos */
+    --acw-danger: #e53935;      /* rojo totales */
+    --acw-card:   #ffffff;      /* fondo tarjeta */
+    --acw-border: rgba(0,0,0,.08);
+    --acw-radius: 16px;
+    --acw-shadow: 0 8px 28px rgba(0,0,0,.08);
+    --acw-text:   #2a2a2a;
+    background: rgba(0,0,0,.22);
+    backdrop-filter: blur(1.5px);
+  }
+  #acwhOverlay .acwh-card{
+    background: var(--acw-card);
+    color: var(--acw-text);
+    border: 1px solid var(--acw-border);
+    border-radius: var(--acw-radius);
+    box-shadow: var(--acw-shadow);
+    padding: 16px 18px;
+  }
+  #acwhOverlay .acwh-title{
+    color: var(--acw-accent);
+    line-height: 1.05;
+  }
+  #acwhOverlay .acwh-sub{ color:#97a1ad; }
+
+  /* filas de la lista */
+  #acwhOverlay .acwh-list .acwh-row{
+    background:#fff;
+    border:1px solid var(--acw-border);
+    border-radius: 14px;
+    padding: 12px 14px;
+    display:flex; align-items:center; justify-content:space-between;
+    gap:12px; margin:10px 0;
+  }
+  #acwhOverlay .acwh-week{ color:#2b2b2b; }
+  #acwhOverlay .acwh-total{ color: var(--acw-danger); font-weight:700; }
+
+  /* botón Open */
+  #acwhOverlay .acwh-btn{
+    background:#e00000; color:#fff; border:0; border-radius:14px;
+    padding:10px 14px; font-weight:700;
+  }
+
+  /* botón Share (encima a la derecha) */
+  #acwhOverlay .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
+  #acwhOverlay .acwh-head .acwh-share{
+    background:#ff6b6f; color:#fff; border:0; border-radius:12px;
+    padding:6px 10px; font-weight:700; box-shadow:0 2px 8px rgba(255,107,111,.28);
+  }
+  #acwhOverlay .acwh-head .acwh-share:active{ transform:translateY(1px); }
+
+  /* tabla detalle semana */
+  #acwhOverlay table.acwh-table th{ color: var(--acw-accent); }
+  #acwhOverlay .acwh-total-line{ color: var(--acw-danger); font-weight:700; text-align:right; }
+
+  /* durante captura (data-share="1") todo sin velos */
+  #acwhOverlay[data-share="1"]{ background: transparent !important; backdrop-filter:none !important; }
+  #acwhOverlay[data-share="1"] .acwh-card,
+  #acwhOverlay[data-share="1"] .acwh-card *{ opacity:1 !important; filter:none !important; box-shadow:none !important; }
+  `;
+  const s = document.createElement('style'); s.id = id; s.textContent = css;
+  document.head.appendChild(s);
+})();
+
+/* === ACW History UI skin v1 — Blue Glass White (safe drop-in) === */
+(function patchHistUI(){
+  // 1) Skin + colores
+  const id='acw-hist-skin';
+  if(!document.getElementById(id)){
+    const css = `
+      #acwhOverlay .acwh-card{
+        background:rgba(255,255,255,.98);
+        border-radius:16px;
+        box-shadow:0 12px 40px rgba(0,120,255,.22);
+      }
+      #acwhOverlay .acwh-title{ color:#0b6dff; letter-spacing:.2px; }
+      #acwhOverlay .acwh-sub{ color:rgba(0,0,0,.38); margin-top:2px; }
+
+      /* MISMO ROJO QUE OPEN */
+      #acwhOverlay .acwh-head .acwh-share{
+        background:#e60000 !important;
+        color:#fff; border:0; border-radius:12px;
+        padding:6px 12px; font-weight:700; cursor:pointer;
+        box-shadow:0 8px 18px rgba(230,0,0,.32);
+      }
+      #acwhOverlay .acwh-head .acwh-share:active{ transform:translateY(1px); }
+
+      #acwhOverlay .acwh-total,
+      #acwhOverlay .acwh-total-line{ color:#e60000; font-weight:700; }
+      #acwhOverlay .acwh-total-line{ text-align:right; margin-top:10px; }
+
+      /* Tabla limpia y alineada */
+      #acwhOverlay .acwh-table{
+        width:100%; border-collapse:separate; border-spacing:0; table-layout:fixed;
+      }
+      #acwhOverlay .acwh-table thead th{
+        padding:10px 12px; color:#0b6dff; font-weight:700;
+      }
+      #acwhOverlay .acwh-table thead th.right{ text-align:right; }
+      #acwhOverlay .acwh-table tbody td{
+        padding:10px 12px; border-top:1px solid rgba(0,0,0,.06);
+      }
+      /* Números y horas perfectamente alineados */
+      #acwhOverlay .acwh-table td.c-shift,
+      #acwhOverlay .acwh-table td.c-hours{
+        font-variant-numeric: tabular-nums; letter-spacing:.2px;
+      }
+      #acwhOverlay .acwh-table td.c-hours{ text-align:right; }
+      #acwhOverlay .acwh-table tr.off td{ color:#9aa3ad; }
+
+      /* Modo captura (mantén tu data-share=1) */
+      #acwhOverlay[data-share="1"]{ background:transparent !important; backdrop-filter:none !important; filter:none !important; }
+      #acwhOverlay[data-share="1"] .acwh-card{
+        background:#fff !important; box-shadow:none !important; opacity:1 !important; filter:none !important;
+      }
+      #acwhOverlay[data-share="1"] .acwh-card *{ opacity:1 !important; filter:none !important; }
+    `;
+    const s=document.createElement('style'); s.id=id; s.textContent=css; document.head.appendChild(s);
+  }
+
+  // 2) Detalle con columnas fijas (mismo tamaño que te gustó)
+  const renderFixed = function(week, email, name, offset, root){
+    const body = root.querySelector("#acwhBody");
+    body.className = "";
+    root.querySelector(".acwh-title").textContent = week.label;
+    root.querySelector(".acwh-sub").textContent =
+      `${offset===0 ? "Week (current)" : `Week -${offset}`} • ${String(name||"").toUpperCase()}`;
+
+    const rows = (week.days||[]).map(d=>{
+      const off = /off/i.test(String(d.shift||""));
+      return `<tr class="${off?'off':''}">
+        <td class="c-day">${d.name||""}</td>
+        <td class="c-shift">${d.shift||'-'}</td>
+        <td class="c-hours">${Number(d.hours||0).toFixed(1)}</td>
+      </tr>`;
+    }).join("");
+
+    body.innerHTML = `
+      <div class="acwh-headrow" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+        <button class="acwh-back">‹ Weeks</button>
+        <div class="acwh-total">${Number(week.total||0).toFixed(1)}h</div>
+      </div>
+      <table class="acwh-table">
+        <colgroup>
+          <col style="width:38%">
+          <col style="width:40%">
+          <col style="width:22%">
+        </colgroup>
+        <thead>
+          <tr><th>Day</th><th>Shift</th><th class="right">Hours</th></tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+      <div class="acwh-total-line">Total: ${Number(week.total||0).toFixed(1)}h</div>
+    `;
+    body.querySelector(".acwh-back").onclick = () => renderHistoryPickerList(email, name, root);
+    __attachHistoryShare(root);
+  };
+
+  // Sobrescribe de forma segura
+  window.renderHistoryDetailCentered = renderFixed;
+})();
+/* === ACW Schedule table alignment v1 — Blue Glass White (safe drop-in) === */
+(function scheduleSkin(){
+  const id='acw-sched-skin';
+  if (document.getElementById(id)) return;
+
+  const css = `
+    #schedule table{
+      width:100%; table-layout:fixed; border-collapse:separate; border-spacing:0;
+    }
+    #schedule table th, #schedule table td{
+      padding:10px 12px; border-top:1px solid rgba(0,0,0,.06);
+    }
+    /* Anchos fijos */
+    #schedule table th:nth-child(1), #schedule table td:nth-child(1){ width:38%; }
+    #schedule table th:nth-child(2), #schedule table td:nth-child(2){
+      width:44%; white-space:nowrap; font-variant-numeric:tabular-nums;
+    }
+    #schedule table th:nth-child(3), #schedule table td:nth-child(3){
+      width:18%; text-align:right; font-variant-numeric:tabular-nums;
+    }
+    /* Hoy visible y OFF gris */
+    #schedule table tr.today td{ background:rgba(11,109,255,.06); }
+    #schedule table td.off{ color:#9aa3ad; }
+  `;
+  const s=document.createElement('style'); s.id=id; s.textContent=css; document.head.appendChild(s);
+
+  // Normaliza el guion para que no parta línea (NBSP–NBSP)
+  function formatShift(str){
+    const t = String(str||'-').trim();
+    return t.replace(/\s-\s/g, '\u00A0–\u00A0');
+  }
+
+  // Post-procesa la tabla después de que se renderiza
+  function fixTable(){
+    const table = document.querySelector('#schedule table');
+    if(!table) return;
+    const rows = Array.from(table.rows);
+    rows.forEach((r,i)=>{
+      if (i===0) return; // header
+      const shiftCell = r.cells[1], hoursCell = r.cells[2];
+      if (shiftCell){
+        const raw = shiftCell.textContent;
+        shiftCell.textContent = formatShift(raw);
+        if (/^\s*off\s*$/i.test(raw)) shiftCell.classList.add('off');
+      }
+      if (hoursCell){ /* ya queda derecha y tabular por CSS */ }
+    });
+  }
+
+  // Hook: vuelve a aplicar tras loadSchedule
+  const orig = window.loadSchedule;
+  if (typeof orig === 'function'){
+    window.loadSchedule = async function(...args){
+      await orig.apply(this, args);
+      requestAnimationFrame(fixTable);
+    };
+  } else {
+    requestAnimationFrame(fixTable);
+  }
+})();
+// Share = rojo fuerte (igual que Open)
+(function(){
+  const id='acw-share-red';
+  if (document.getElementById(id)) return;
+  const s=document.createElement('style'); s.id=id;
+  s.textContent = `
+    .acwh-head .acwh-share{
+      background:#e60000 !important;
+      box-shadow:0 2px 10px rgba(230,0,0,.35);
+      color:#fff; border:0; border-radius:10px;
+    }
+    .acwh-head .acwh-share:active{ transform:translateY(1px); }
+  `;
+  document.head.appendChild(s);
 })();

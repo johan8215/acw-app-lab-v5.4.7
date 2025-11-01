@@ -461,25 +461,26 @@ function renderTeamViewPage() {
   `;
   document.body.appendChild(box);
 
-  // ✅ Luego calculas y pintas las filas
-  const start = __teamPage * TEAM_PAGE_SIZE;
-  const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
-  const body = $("#tvBody", box);
+// ✅ Luego calculas y pintas las filas
+const start = __teamPage * TEAM_PAGE_SIZE;
+const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
+const body  = $("#tvBody", box);
 
-  body.innerHTML = slice.map(emp => `
-    <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
-      <td>
-        <span class="role-chip" data-role="${(emp.role||'').toLowerCase()}"></span>
-        <b>${emp.name}</b>
-      </td>
-      <td class="tv-hours">—</td>
-      <td class="tv-live">—</td>
-      <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
-    </tr>
-  `).join("");
+body.innerHTML = slice.map(emp => `
+  <tr
+    data-email="${emp.email}"
+    data-name="${emp.name}"
+    data-role="${(emp.role || emp.position || emp.title || '').toLowerCase()}"
+    data-phone="${emp.phone || ''}">
+    <td><b>${emp.name}</b></td>
+    <td class="tv-hours">—</td>
+    <td class="tv-live">—</td>
+    <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
+  </tr>
+`).join("");
 
-  // 🎨 Colorea/etiqueta por rol (drivers, managers, supervisors)
-  ACWRoles?.decorateRows(box);
+// 🎨 Colorea/etiqueta por rol (drivers, managers, supervisors)
+ACWRoles?.decorateRows(box);
 
   // Navegación
   $("#tvPrev", box).onclick = () => { __teamPage = Math.max(0, __teamPage - 1); renderTeamViewPage(); };

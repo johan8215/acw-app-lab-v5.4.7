@@ -1518,10 +1518,9 @@ function bySheetOrder(a,b){
       __wbAbort?.abort();
       __wbAbort = new AbortController();
 
-      const dir = await API.getDirectory(__wbAbort);
-// 👇 fija y aplica orden del Sheet
-setSheetOrderFromDirectory(dir?.directory || []);
-__wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);
+const dir = await API.getDirectory(__wbAbort);
+setSheetOrderFromDirectory(dir?.directory || []);            // ← fija orden
+__wbEmployees = (dir?.directory || []).slice().sort(bySheetOrder);  // ← aplica orden
        const dir = await API.getDirectory();
 // 👇 guarda el orden canónico (por email / nombre)
 setSheetOrderFromDirectory(dir?.directory || []);

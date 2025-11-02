@@ -1,13 +1,15 @@
 /* ============================================================
-   🧠 ACW-App v5.6.3 Turbo — Blue Glass White Connected
-   Johan A. Giraldo (JAG15) & Sky — Nov 2025
-   ============================================================
-   Mejoras clave:
-   - Caché en memoria con TTL (desduplica y acelera)
-   - Team View sin intervalos cuando está cerrado
-   - Carga por página con concurrencia limitada
-   - AbortController para cancelar al cerrar
-   - Menos repaints/DOM touches
+   🧠 ACW-App v5.6.3 Turbo — Blue Glass White Connected (Nov 2025)
+   Johan A. Giraldo (JAG15) & Sky
+   - Hoy (Today) idempotente, seguro por zona horaria (NY)
+   - Caché en memoria con TTL + de-dupe para fetchJSON
+   - Team View con concurrencia limitada + Live
+   - History (5w) con botón Share “clean skin”
+   - Skins de Schedule/History (alineación tabular, rojo/azul)
+   - Change Password hard-fix (modal independiente)
+   - Settings modal fix (z-index y cierre seguro)
+   - Envíos sendToday/sendTomorrow con mensajes y vibración
+   - ACW_TEST diagnóstico integral
    ============================================================ */
 
 let currentUser = null;
@@ -20,8 +22,8 @@ function safeText(el, txt){ if(el) el.textContent = txt; }
 function setVisible(el, show){ if(!el) return; el.style.display = show ? "" : "none"; }
 function cssEscape(s){ try{return CSS.escape(s);}catch{ return String(s).replace(/[^a-zA-Z0-9_\-]/g,"_"); } }
 
-/* === Today (timezone-safe, NY) === */
-const Today = (() => {
+/* === Today (timezone-safe, idempotent, global) === */
+window.Today = window.Today || (() => {
   const TZ = 'America/New_York';
   const keyOf = () =>
     new Date().toLocaleString('en-US', { weekday: 'short', timeZone: TZ })
@@ -31,12 +33,13 @@ const Today = (() => {
 
   // Refresco a medianoche + pulso cada minuto (por si la pestaña queda abierta)
   const now = new Date();
-  const next = new Date(now); next.setHours(24,0,0,0);         // disparo aproximado
-  setTimeout(() => { key = keyOf(); }, next - now + 50);
+  const next = new Date(now); next.setHours(24,0,0,0);
+  setTimeout(() => { key = keyOf(); }, Math.max(100, next - now + 50));
   setInterval(() => { key = keyOf(); }, 60 * 1000);
 
   return { get key(){ return key; } };
 })();
+
 /* Caché en memoria con TTL + de-dupe */
 const Net = (()=> {
   const store = new Map(); // key -> {expires, value} | inflight: Promise
@@ -304,9 +307,37 @@ function paintLiveInTable(todayKey, hours, staticMode=false){
 /* =================== SETTINGS =================== */
 function openSettings(){ setVisible($("#settingsModal"), true); }
 function closeSettings(){ setVisible($("#settingsModal"), false); }
-function openChangePassword(){ setVisible($("#changePasswordModal"), true); }
-function closeChangePassword(){ setVisible($("#changePasswordModal"), false); }
+// HOTFIX Settings modal (z-index + cierre seguro)
+(function () {
+  function openSettingsFix() {
+    const modal = document.getElementById("settingsModal");
+    if (!modal) { console.warn("⚠️ Settings modal not found"); return; }
+    // Cierra overlays que podrían taparlo
+    document.getElementById("acwhOverlay")?.remove();      // History
+    document.getElementById("directoryWrapper")?.remove(); // Team View
+    // Mostrar por encima de todo
+    modal.style.display = "flex";
+    modal.style.alignItems = "center";
+    modal.style.justifyContent = "center";
+    modal.style.zIndex = 12000;
+    requestAnimationFrame(() => modal.classList.add("show"));
+    // Cerrar al click fuera
+    const onClick = (e) => { if (e.target === modal) closeSettingsFix(); };
+    modal.addEventListener("click", onClick, { once: true });
+    // Cerrar con ESC
+    const onKey = (ev) => { if (ev.key === "Escape") closeSettingsFix(); };
+    document.addEventListener("keydown", onKey, { once: true });
 
+    function closeSettingsFix() {
+      modal.classList.remove('show');
+      setTimeout(()=> modal.style.display='none',150);
+    }
+    window.closeSettings = closeSettingsFix;
+  }
+  window.openSettings = openSettingsFix;
+})();
+
+/* =================== REFRESH / LOGOUT =================== */
 function refreshApp() {
   try { if ("caches" in window) caches.keys().then(keys=>keys.forEach(k=>caches.delete(k))); } catch {}
   toast("⏳ Updating…", "info");
@@ -317,16 +348,17 @@ function logoutUser(){
   toast("👋 Logged out", "info");
   setTimeout(()=>location.reload(), 500);
 }
+
+/* ======= Estilos Share/History: inyecta una sola vez ======= */
 (function ensureShareCSS(){
   if (document.getElementById('acw-share-css')) return;
   const s = document.createElement('style'); s.id = 'acw-share-css';
   s.textContent = `
-    /* Botón Share junto a la X */
     .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
     .acwh-head .acwh-share{
-      background:#ff4d4f; color:#fff; border:0; border-radius:10px;
+      background:#e60000; color:#fff; border:0; border-radius:10px;
       padding:6px 10px; font-weight:700; cursor:pointer;
-      box-shadow:0 2px 8px rgba(255,77,79,.35);
+      box-shadow:0 2px 10px rgba(230,0,0,.35);
     }
     .acwh-head .acwh-share:active{ transform:translateY(1px); }
 
@@ -340,13 +372,10 @@ function logoutUser(){
       background:#ffffff !important;
       opacity:1 !important;
       filter:none !important;
-      backdrop-filter:none !important;
-      box-shadow:none !important; /* evita velo gris */
+      box-shadow:none !important;
     }
-    /* por si algún hijo tiene opacidades/filtros */
     #acwhOverlay[data-share="1"] .acwh-card *{
-      opacity:1 !important;
-      filter:none !important;
+      opacity:1 !important; filter:none !important;
     }
   `;
   document.head.appendChild(s);
@@ -382,6 +411,94 @@ async function submitChangePassword() {
     safeText(diag, "⚠️ " + err.message);
   }
 }
+
+/* === ACW v5.6.3 — Change Password hard-fix (pegar al FINAL del archivo) === */
+(function () {
+  function injectStyleOnce(id, css){
+    if (document.getElementById(id)) return;
+    const s = document.createElement('style'); s.id = id; s.textContent = css;
+    document.head.appendChild(s);
+  }
+  injectStyleOnce('acw-cp2-css', `
+    #changePasswordModal{position:fixed; inset:0; display:none; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.45); backdrop-filter:blur(8px); z-index:13000;}
+    #changePasswordModal.show{ display:flex !important; }
+    #changePasswordModal .modal-content.glass{
+      background:rgba(255,255,255,.97); border-radius:14px; box-shadow:0 0 40px rgba(0,120,255,.3);
+      padding:24px 26px; width:340px; max-width:92vw; animation:popIn .22s ease; position:relative; text-align:center;
+    }
+    #changePasswordModal .close{ position:absolute; right:10px; top:8px; background:none; border:none; font-size:22px; cursor:pointer; }
+    #changePasswordModal input{
+      display:block; margin:8px auto; width:90%; max-width:280px; padding:10px;
+      border:1px solid rgba(0,120,255,.25); border-radius:6px; outline:none;
+    }
+  `);
+
+  function ensureChangePasswordModal(){
+    let cp = document.getElementById('changePasswordModal');
+    if (!cp){
+      cp = document.createElement('div');
+      cp.id = 'changePasswordModal';
+      cp.className = 'modal';
+      cp.innerHTML = `
+        <div class="modal-content glass">
+          <button class="close" aria-label="Close">×</button>
+          <h3 style="margin:0 0 8px">Change Password</h3>
+          <input id="oldPass" type="password" placeholder="Current password" autocomplete="current-password">
+          <input id="newPass" type="password" placeholder="New password" autocomplete="new-password">
+          <input id="confirmPass" type="password" placeholder="Confirm new password" autocomplete="new-password">
+          <p id="passDiag" class="error"></p>
+          <div style="display:flex;gap:8px;justify-content:center;margin-top:6px;">
+            <button id="cpSaveBtn">Save</button>
+            <button id="cpCancelBtn" type="button">Cancel</button>
+          </div>
+        </div>`;
+      document.body.appendChild(cp);
+      cp.querySelector('.close').onclick = closeChangePassword2;
+      cp.querySelector('#cpCancelBtn').onclick = closeChangePassword2;
+      cp.addEventListener('click', (e)=>{ if (e.target === cp) closeChangePassword2(); });
+      cp.querySelector('#cpSaveBtn').onclick = submitChangePassword;
+    }
+    return cp;
+  }
+
+  let _settingsWasVisible = null;
+
+  function openChangePassword2(){
+    const cp = ensureChangePasswordModal();
+    const settings = document.getElementById('settingsModal');
+    if (settings){
+      _settingsWasVisible = (settings.style.display !== 'none' && settings.offsetParent !== null);
+      settings.style.display = 'none';
+      settings.classList.remove('show');
+    }
+    cp.style.zIndex = '13000';
+    cp.classList.add('show');
+    const onKey = (ev)=>{ if (ev.key === 'Escape') closeChangePassword2(); };
+    document.addEventListener('keydown', onKey, { once:true });
+    setTimeout(()=> document.getElementById('oldPass')?.focus(), 50);
+  }
+
+  function closeChangePassword2(){
+    const cp = document.getElementById('changePasswordModal');
+    const settings = document.getElementById('settingsModal');
+    if (cp){ cp.classList.remove('show'); cp.style.display = 'none'; }
+    if (settings && _settingsWasVisible){
+      settings.style.display = 'flex';
+      settings.classList.add('show');
+      settings.style.alignItems = 'center';
+      settings.style.justifyContent = 'center';
+      settings.style.zIndex = '12000';
+    }
+    _settingsWasVisible = null;
+  }
+
+  window.openChangePassword = openChangePassword2;
+  window.closeChangePassword = closeChangePassword2;
+
+  const btn = document.getElementById('changePassBtn');
+  if (btn) btn.onclick = openChangePassword2;
+})();
 
 /* =================== TEAM VIEW (gestión) =================== */
 const TEAM_PAGE_SIZE = 8;
@@ -764,6 +881,7 @@ async function __acwHistory5w(email, weeks = 5){
   });
   return settled;
 }
+
 function openHistoryPicker(email, name="My History"){
   document.getElementById("acwhOverlay")?.remove();
   const overlay = document.createElement("div");
@@ -774,6 +892,7 @@ function openHistoryPicker(email, name="My History"){
       <div class="acwh-head">
         <div style="width:22px"></div>
         <h3 class="acwh-title">History (5 weeks)</h3>
+        <button class="acwh-share" type="button">Share</button>
         <button class="acwh-close" aria-label="Close">×</button>
       </div>
       <div class="acwh-sub">${String(name||"").toUpperCase()}</div>
@@ -782,13 +901,13 @@ function openHistoryPicker(email, name="My History"){
       </div>
     </div>`;
   document.body.appendChild(overlay);
-   __attachHistoryShare(overlay);
   overlay.querySelector(".acwh-close").onclick = () => overlay.remove();
   overlay.addEventListener("click", e=>{ if(e.target===overlay) overlay.remove(); });
+  __attachHistoryShare(overlay);
   renderHistoryPickerList(email, name, overlay);
 }
 
-// Botón Share pegado a la X (se crea una sola vez por overlay)
+// Botón Share pegado a la X (crea/une una sola vez)
 function __attachHistoryShare(root = document){
   const head = root.querySelector('.acwh-head');
   if (!head) return;
@@ -799,11 +918,9 @@ function __attachHistoryShare(root = document){
     btn.className = 'acwh-share';
     btn.type = 'button';
     btn.textContent = 'Share';
-    // lo insertamos justo antes de la X
     head.insertBefore(btn, head.querySelector('.acwh-close') || null);
   }
 
-  // acción del botón
   btn.onclick = async ()=>{
     const overlay = root.closest('#acwhOverlay') || root;
     const card    = overlay.querySelector('.acwh-card') || overlay;
@@ -820,7 +937,7 @@ function __attachHistoryShare(root = document){
       overlay.removeAttribute('data-share');
     }
   };
-} // <-- este cierre faltaba
+}
 
 // === SHARE (fallback claro y seguro) ===
 async function __ensureH2C(){
@@ -868,6 +985,7 @@ async function __shareElAsImage(el, filename='acw.png'){
     toast('❌ Share failed','error');
   }
 }
+
 async function renderHistoryPickerList(email, name, root){
   const body = root.querySelector("#acwhBody");
   body.className = "acwh-list";
@@ -890,8 +1008,9 @@ async function renderHistoryPickerList(email, name, root){
   });
   root.querySelector(".acwh-title").textContent = "History (5 weeks)";
   root.querySelector(".acwh-sub").textContent   = String(name||"").toUpperCase();
-   __attachHistoryShare(root);
+  __attachHistoryShare(root);
 }
+
 function renderHistoryDetailCentered(week, email, name, offset, root){
   const body = root.querySelector("#acwhBody");
   body.className = "";
@@ -920,281 +1039,11 @@ function renderHistoryDetailCentered(week, email, name, offset, root){
     <div class="acwh-total-line">Total: ${Number(week.total||0).toFixed(1)}h</div>
   `;
   body.querySelector(".acwh-back").onclick = () => renderHistoryPickerList(email, name, root);
-   __attachHistoryShare(root);
+  __attachHistoryShare(root);
 }
-(function(){
-  const id='acw-share-css';
-  if (document.getElementById(id)) return;
-  const s=document.createElement('style'); s.id=id;
-  s.textContent = `
-    .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-    .acwh-head .acwh-share{
-      background:#ff4d4f; border:none; color:#fff; font-weight:700;
-      padding:6px 10px; border-radius:12px; box-shadow:0 2px 6px rgba(0,0,0,.15);
-    }
-    .acwh-head .acwh-share:active{ transform:scale(.98); }
-  `;
-  document.head.appendChild(s);
-})();
-
-/* =================== GLOBAL BINDS =================== */
-window.loginUser = loginUser;
-window.openSettings = openSettings;
-window.closeSettings = closeSettings;
-window.refreshApp = refreshApp;
-window.logoutUser = logoutUser;
-window.openChangePassword = openChangePassword;
-window.closeChangePassword = closeChangePassword;
-window.submitChangePassword = submitChangePassword;
-window.openEmployeePanel = openEmployeePanel;
-window.sendShiftMessage = sendShiftMessage;
-window.updateShiftFromModal = updateShiftFromModal;
-window.showWelcome = showWelcome;
-window.renderTeamViewPage = renderTeamViewPage;
-window.openHistoryPicker = openHistoryPicker;
-window.openHistoryFor   = (...args)=> openHistoryPicker(...args);
-
-console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: ${CONFIG?.BASE_URL||"<no-config>"}`);
-
-/* =================== UI micro-fix (TV show class) =================== */
-(function(){
-  const prev = typeof window.renderTeamViewPage==='function' ? window.renderTeamViewPage : null;
-  if (!prev) return;
-  window.renderTeamViewPage = function(...args){
-    prev.apply(this, args);
-    const box = document.querySelector('#directoryWrapper');
-    if (box) box.classList.add('show');
-  };
-})();
-// === HOTFIX Settings modal (v5.6.3) ===
-(function () {
-  function openSettingsFix() {
-    const modal = document.getElementById("settingsModal");
-    if (!modal) { console.warn("⚠️ Settings modal not found"); return; }
-
-    // Cierra overlays que podrían taparlo
-    document.getElementById("acwhOverlay")?.remove();      // History
-    document.getElementById("directoryWrapper")?.remove(); // Team View
-
-    // Mostrar por encima de todo
-    modal.style.display = "flex";         // <- sobrescribe .modal{display:none}
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = 12000;           // por encima de history/team view
-    requestAnimationFrame(() => modal.classList.add("show"));
-
-    // Cerrar al click fuera
-    const onClick = (e) => { if (e.target === modal) closeSettingsFix(); };
-    modal.addEventListener("click", onClick, { once: true });
-
-    // Cerrar con ESC
-    const onKey = (ev) => { if (ev.key === "Escape") closeSettingsFix(); };
-    document.addEventListener("keydown", onKey, { once: true });
-
-    function closeSettingsFix() {
-      modal.classList.remove("show");
-      setTimeout(() => (modal.style.display = "none"), 150);
-    }
-    // Exporta close actualizado
-    window.closeSettings = closeSettingsFix;
-  }
-  // Exporta open actualizado
-  window.openSettings = openSettingsFix;
-})();
-// === HOTFIX Settings modal (v5.6.3) ===
-(function () {
-  function openSettingsFix() {
-    const modal = document.getElementById("settingsModal");
-    if (!modal) { console.warn("⚠️ Settings modal not found"); return; }
-
-    // Cierra overlays que podrían taparlo
-    document.getElementById("acwhOverlay")?.remove();      // History
-    document.getElementById("directoryWrapper")?.remove(); // Team View
-
-    // Mostrar por encima de todo
-    modal.style.display = "flex";         // <- sobrescribe .modal{display:none}
-    modal.style.alignItems = "center";
-    modal.style.justifyContent = "center";
-    modal.style.zIndex = 12000;           // por encima de history/team view
-    requestAnimationFrame(() => modal.classList.add("show"));
-
-    // Cerrar al click fuera
-    const onClick = (e) => { if (e.target === modal) closeSettingsFix(); };
-    modal.addEventListener("click", onClick, { once: true });
-
-    // Cerrar con ESC
-    const onKey = (ev) => { if (ev.key === "Escape") closeSettingsFix(); };
-    document.addEventListener("keydown", onKey, { once: true });
-
-    function closeSettingsFix() {
-      modal.classList.remove("show");
-      setTimeout(() => (modal.style.display = "none"), 150);
-    }
-    // Exporta close actualizado
-    window.closeSettings = closeSettingsFix;
-  }
-  // Exporta open actualizado
-  window.openSettings = openSettingsFix;
-})();
-// === ACW v5.6.3 — Change Password hard-fix (pegar al FINAL) ===
-(function () {
-  function injectStyleOnce(id, css){
-    if (document.getElementById(id)) return;
-    const s = document.createElement('style'); s.id = id; s.textContent = css;
-    document.head.appendChild(s);
-  }
-  injectStyleOnce('acw-cp2-css', `
-    #changePasswordModal{position:fixed; inset:0; display:none; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.45); backdrop-filter:blur(8px); z-index:13000;}
-    #changePasswordModal.show{ display:flex !important; }
-    #changePasswordModal .modal-content.glass{
-      background:rgba(255,255,255,.97); border-radius:14px; box-shadow:0 0 40px rgba(0,120,255,.3);
-      padding:24px 26px; width:340px; max-width:92vw; animation:popIn .22s ease; position:relative; text-align:center;
-    }
-    #changePasswordModal .close{ position:absolute; right:10px; top:8px; background:none; border:none; font-size:22px; cursor:pointer; }
-    #changePasswordModal input{
-      display:block; margin:8px auto; width:90%; max-width:280px; padding:10px;
-      border:1px solid rgba(0,120,255,.25); border-radius:6px; outline:none;
-    }
-  `);
-
-  function ensureChangePasswordModal(){
-    let cp = document.getElementById('changePasswordModal');
-    if (!cp){
-      cp = document.createElement('div');
-      cp.id = 'changePasswordModal';
-      cp.className = 'modal';
-      cp.innerHTML = `
-        <div class="modal-content glass">
-          <button class="close" aria-label="Close">×</button>
-          <h3 style="margin:0 0 8px">Change Password</h3>
-          <input id="oldPass" type="password" placeholder="Current password" autocomplete="current-password">
-          <input id="newPass" type="password" placeholder="New password" autocomplete="new-password">
-          <input id="confirmPass" type="password" placeholder="Confirm new password" autocomplete="new-password">
-          <p id="passDiag" class="error"></p>
-          <div style="display:flex;gap:8px;justify-content:center;margin-top:6px;">
-            <button id="cpSaveBtn">Save</button>
-            <button id="cpCancelBtn" type="button">Cancel</button>
-          </div>
-        </div>`;
-      document.body.appendChild(cp);
-      cp.querySelector('.close').onclick = closeChangePassword2;
-      cp.querySelector('#cpCancelBtn').onclick = closeChangePassword2;
-      cp.addEventListener('click', (e)=>{ if (e.target === cp) closeChangePassword2(); });
-      cp.querySelector('#cpSaveBtn').onclick = submitChangePassword;
-    }
-    return cp;
-  }
-
-  let _settingsWasVisible = null;
-
-  function openChangePassword2(){
-    const cp = ensureChangePasswordModal();
-    const settings = document.getElementById('settingsModal');
-    if (settings){
-      _settingsWasVisible = (settings.style.display !== 'none' && settings.offsetParent !== null);
-      settings.style.display = 'none';
-      settings.classList.remove('show');
-    }
-    cp.style.zIndex = '13000';
-    cp.classList.add('show');
-    const onKey = (ev)=>{ if (ev.key === 'Escape') closeChangePassword2(); };
-    document.addEventListener('keydown', onKey, { once:true });
-    setTimeout(()=> document.getElementById('oldPass')?.focus(), 50);
-  }
-
-  function closeChangePassword2(){
-    const cp = document.getElementById('changePasswordModal');
-    const settings = document.getElementById('settingsModal');
-    if (cp){ cp.classList.remove('show'); cp.style.display = 'none'; }
-    if (settings && _settingsWasVisible){
-      settings.style.display = 'flex';
-      settings.classList.add('show');
-      settings.style.alignItems = 'center';
-      settings.style.justifyContent = 'center';
-      settings.style.zIndex = '12000';
-    }
-    _settingsWasVisible = null;
-  }
-
-  window.openChangePassword = openChangePassword2;
-  window.closeChangePassword = closeChangePassword2;
-
-  const btn = document.getElementById('changePassBtn');
-  if (btn) btn.onclick = openChangePassword2;
-})();
-/* === ACW — History "Clean Skin" (solo estilos) === */
-(function(){
-  const id = 'acw-history-skin';
-  if (document.getElementById(id)) return;
-  const css = `
-  #acwhOverlay{
-    --acw-accent: #0a84ff;      /* azul títulos */
-    --acw-danger: #e53935;      /* rojo totales */
-    --acw-card:   #ffffff;      /* fondo tarjeta */
-    --acw-border: rgba(0,0,0,.08);
-    --acw-radius: 16px;
-    --acw-shadow: 0 8px 28px rgba(0,0,0,.08);
-    --acw-text:   #2a2a2a;
-    background: rgba(0,0,0,.22);
-    backdrop-filter: blur(1.5px);
-  }
-  #acwhOverlay .acwh-card{
-    background: var(--acw-card);
-    color: var(--acw-text);
-    border: 1px solid var(--acw-border);
-    border-radius: var(--acw-radius);
-    box-shadow: var(--acw-shadow);
-    padding: 16px 18px;
-  }
-  #acwhOverlay .acwh-title{
-    color: var(--acw-accent);
-    line-height: 1.05;
-  }
-  #acwhOverlay .acwh-sub{ color:#97a1ad; }
-
-  /* filas de la lista */
-  #acwhOverlay .acwh-list .acwh-row{
-    background:#fff;
-    border:1px solid var(--acw-border);
-    border-radius: 14px;
-    padding: 12px 14px;
-    display:flex; align-items:center; justify-content:space-between;
-    gap:12px; margin:10px 0;
-  }
-  #acwhOverlay .acwh-week{ color:#2b2b2b; }
-  #acwhOverlay .acwh-total{ color: var(--acw-danger); font-weight:700; }
-
-  /* botón Open */
-  #acwhOverlay .acwh-btn{
-    background:#e00000; color:#fff; border:0; border-radius:14px;
-    padding:10px 14px; font-weight:700;
-  }
-
-  /* botón Share (encima a la derecha) */
-  #acwhOverlay .acwh-head{ display:flex; align-items:center; justify-content:space-between; gap:8px; }
-  #acwhOverlay .acwh-head .acwh-share{
-    background:#ff6b6f; color:#fff; border:0; border-radius:12px;
-    padding:6px 10px; font-weight:700; box-shadow:0 2px 8px rgba(255,107,111,.28);
-  }
-  #acwhOverlay .acwh-head .acwh-share:active{ transform:translateY(1px); }
-
-  /* tabla detalle semana */
-  #acwhOverlay table.acwh-table th{ color: var(--acw-accent); }
-  #acwhOverlay .acwh-total-line{ color: var(--acw-danger); font-weight:700; text-align:right; }
-
-  /* durante captura (data-share="1") todo sin velos */
-  #acwhOverlay[data-share="1"]{ background: transparent !important; backdrop-filter:none !important; }
-  #acwhOverlay[data-share="1"] .acwh-card,
-  #acwhOverlay[data-share="1"] .acwh-card *{ opacity:1 !important; filter:none !important; box-shadow:none !important; }
-  `;
-  const s = document.createElement('style'); s.id = id; s.textContent = css;
-  document.head.appendChild(s);
-})();
 
 /* === ACW History UI skin v1 — Blue Glass White (safe drop-in) === */
 (function patchHistUI(){
-  // 1) Skin + colores
   const id='acw-hist-skin';
   if(!document.getElementById(id)){
     const css = `
@@ -1206,7 +1055,7 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
       #acwhOverlay .acwh-title{ color:#0b6dff; letter-spacing:.2px; }
       #acwhOverlay .acwh-sub{ color:rgba(0,0,0,.38); margin-top:2px; }
 
-      /* MISMO ROJO QUE OPEN */
+      /* Share rojo fuerte (match con Open) */
       #acwhOverlay .acwh-head .acwh-share{
         background:#e60000 !important;
         color:#fff; border:0; border-radius:12px;
@@ -1230,25 +1079,15 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
       #acwhOverlay .acwh-table tbody td{
         padding:10px 12px; border-top:1px solid rgba(0,0,0,.06);
       }
-      /* Números y horas perfectamente alineados */
-      #acwhOverlay .acwh-table td.c-shift,
-      #acwhOverlay .acwh-table td.c-hours{
-        font-variant-numeric: tabular-nums; letter-spacing:.2px;
-      }
-      #acwhOverlay .acwh-table td.c-hours{ text-align:right; }
-      #acwhOverlay .acwh-table tr.off td{ color:#9aa3ad; }
 
-      /* Modo captura (mantén tu data-share=1) */
       #acwhOverlay[data-share="1"]{ background:transparent !important; backdrop-filter:none !important; filter:none !important; }
-      #acwhOverlay[data-share="1"] .acwh-card{
-        background:#fff !important; box-shadow:none !important; opacity:1 !important; filter:none !important;
-      }
+      #acwhOverlay[data-share="1"] .acwh-card{ background:#fff !important; box-shadow:none !important; opacity:1 !important; filter:none !important; }
       #acwhOverlay[data-share="1"] .acwh-card *{ opacity:1 !important; filter:none !important; }
     `;
     const s=document.createElement('style'); s.id=id; s.textContent=css; document.head.appendChild(s);
   }
 
-  // 2) Detalle con columnas fijas (mismo tamaño que te gustó)
+  // Detalle con columnas fijas
   const renderFixed = function(week, email, name, offset, root){
     const body = root.querySelector("#acwhBody");
     body.className = "";
@@ -1261,7 +1100,7 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
       return `<tr class="${off?'off':''}">
         <td class="c-day">${d.name||""}</td>
         <td class="c-shift">${d.shift||'-'}</td>
-        <td class="c-hours">${Number(d.hours||0).toFixed(1)}</td>
+        <td class="c-hours" style="text-align:right">${Number(d.hours||0).toFixed(1)}</td>
       </tr>`;
     }).join("");
 
@@ -1290,6 +1129,7 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   // Sobrescribe de forma segura
   window.renderHistoryDetailCentered = renderFixed;
 })();
+
 /* === ACW Schedule table alignment v1 — Blue Glass White (safe drop-in) === */
 (function scheduleSkin(){
   const id='acw-sched-skin';
@@ -1350,28 +1190,29 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     requestAnimationFrame(fixTable);
   }
 })();
-// Share = rojo fuerte (igual que Open)
-(function(){
-  const id='acw-share-red';
-  if (document.getElementById(id)) return;
-  const s=document.createElement('style'); s.id=id;
-  s.textContent = `
-    .acwh-head .acwh-share{
-      background:#e60000 !important;
-      box-shadow:0 2px 10px rgba(230,0,0,.35);
-      color:#fff; border:0; border-radius:10px;
-    }
-    .acwh-head .acwh-share:active{ transform:translateY(1px); }
-  `;
-  document.head.appendChild(s);
-})();
+
+/* =================== GLOBAL BINDS =================== */
+window.loginUser = loginUser;
+window.openSettings = openSettings;
+window.closeSettings = closeSettings;
+window.refreshApp = refreshApp;
+window.logoutUser = logoutUser;
+window.openChangePassword = openChangePassword;
+window.closeChangePassword = closeChangePassword;
+window.submitChangePassword = submitChangePassword;
+window.openEmployeePanel = openEmployeePanel;
+window.sendShiftMessage = sendShiftMessage;
+window.updateShiftFromModal = updateShiftFromModal;
+window.showWelcome = showWelcome;
+window.renderTeamViewPage = renderTeamViewPage;
+window.openHistoryPicker = openHistoryPicker;
+window.openHistoryFor   = (...args)=> openHistoryPicker(...args);
+
+console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: ${CONFIG?.BASE_URL||"<no-config>"}`);
+
 /* ============================================================
    🔧 ACW_TEST v1.3 — Diagnóstico integral (no destructivo)
-   JAG15 & Sky — Nov 2025
-   - Verifica: CONFIG/BASE_URL, PWA/SW y cachés, ping/login,
-     SmartSchedule (0..4), Directory, sendToday/sendTomorrow (dry),
-     Today.key, caché TTL + de-dupe, elementos UI base.
-   - Muestra un panel con resultados + consola con tabla y JSON.
+   (Mismo que ya viste en pantalla de resultados)
    ============================================================ */
 (function(){
   const enc = encodeURIComponent;
@@ -1437,11 +1278,10 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     document.body.appendChild(root);
     root.querySelector("#acwdiag-close").onclick = ()=> root.remove();
 
-    // Share como imagen (sin dependencias externas)
+    // Share como imagen
     root.querySelector("#acwdiag-share").onclick = async ()=>{
       const el = root.querySelector(".card");
       try{
-        // mini html2canvas inline (import dinámico)
         if(!window.html2canvas){
           const s=document.createElement("script");
           s.src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
@@ -1500,14 +1340,12 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     });
 
     // 1) Service Worker + cachés
-    let swReg = "n/a", cacheKey="";
     try{
       if ("serviceWorker" in navigator){
         const regs = await navigator.serviceWorker.getRegistrations();
-        swReg = regs.length? "registered":"not registered";
-        meta.sw = swReg;
+        meta.sw = regs.length? "registered":"not registered";
         const keys = await caches.keys();
-        cacheKey = (keys||[]).find(k=>/acw-cache-/i.test(k)) || "";
+        const cacheKey = (keys||[]).find(k=>/acw-cache-/i.test(k)) || "";
         const vFromCache = cacheKey.replace(/^.*v/i,"v");
         const vMatch = CFGV && vFromCache && CFGV.includes(vFromCache);
         push({
@@ -1672,13 +1510,13 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     console.log("Fix map:", FIX);
     console.groupEnd();
 
-    // Retorno para uso programático
     return { meta, checks, fix_suggestions: checks.filter(x=>x.status!=="ok").map(x=>({id:x.id, fix:x.fix})) };
   }
 
   window.ACW_TEST = { run };
 })();
-// ▶ Auto-diag por URL: ...?diag=1
+
+/* ▶ Auto-diag por URL: ...?diag=1 */
 (function(){
   try{
     const q = new URLSearchParams(location.search);
@@ -1693,7 +1531,8 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     }
   }catch(e){}
 })();
-// ▶ Botón flotante para ejecutar diagnóstico
+
+/* ▶ Botón flotante para ejecutar diagnóstico */
 (function(){
   if (document.getElementById("acwDiagBtn") || !window.ACW_TEST) return;
   const b = document.createElement("button");

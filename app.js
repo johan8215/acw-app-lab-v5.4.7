@@ -1358,3 +1358,355 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   `;
   document.head.appendChild(s);
 })();
+/* ================== ACW — BOARD (LITE) v1 ================== */
+/* Tarjetas por grupo + conteo de activos + completados hoy.
+   Requiere:
+   - isManagerRole, parseTime, Today, runLimited, API.getDirectory/getSchedule,
+     sendShiftMessage, bySheetOrder, cssEscape (ya existen en tu backup).
+*/
+
+/* ---------- CSS (inserción una sola vez) ---------- */
+(function ensureBoardLiteCSS(){
+  if (document.getElementById('acw-board-lite-css')) return;
+  const s = document.createElement('style'); s.id='acw-board-lite-css';
+  s.textContent = `
+    #ablOverlay{position:fixed; inset:0; z-index:12000; background:rgba(5,20,40,.28); backdrop-filter:blur(2px);
+      display:flex; align-items:center; justify-content:center;}
+    .abl-card{width:min(1100px,94vw); max-height:88vh; overflow:auto;
+      background:#fff; border-radius:16px; box-shadow:0 26px 80px rgba(0,120,255,.25);}
+    .abl-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #eef2f6;}
+    .abl-head h3{margin:0; font-size:18px; color:#0a56cc;}
+    .abl-head .spacer{flex:1;}
+    .abl-pill{background:#ff3b30; color:#fff; border:0; font-weight:800; padding:6px 10px; border-radius:10px;
+      box-shadow:0 2px 8px rgba(255,59,48,.35); cursor:pointer;}
+    .abl-close{background:#f2f6ff; color:#0a56cc; border:0; font-weight:800; padding:6px 10px; border-radius:10px; cursor:pointer;}
+    .abl-sub{padding:0 16px 10px; color:#0a56cc; font-weight:800; display:flex; gap:16px; align-items:center;}
+    .abl-chip{background:#f2f6ff; color:#0a56cc; font-weight:800; border-radius:999px; padding:4px 10px; display:inline-block;}
+    .abl-body{padding:6px 16px 16px;}
+    .abl-section{margin:12px 0 18px;}
+    .abl-sec-head{display:flex; align-items:center; gap:10px; margin:6px 0 8px;}
+    .abl-badge{display:inline-block; font-weight:900; color:#fff; border-radius:10px; padding:4px 10px;}
+    .abl-badge.back{background:#0a56cc;}
+    .abl-badge.front{background:#f59e0b;}
+    .abl-badge.cash{background:#6f42c1;}
+    .abl-badge.driver{background:#374151;}
+    .abl-badge.crew{background:#607d8b;}
+    .abl-count{margin-left:auto; font-weight:900; color:#0a56cc;}
+    .abl-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px;}
+    .abl-cardp{border:1px solid #eef2f6; border-radius:12px; padding:10px; box-shadow:0 3px 10px rgba(0,0,0,.04);}
+    .abl-top{display:flex; align-items:center; gap:10px; margin-bottom:6px;}
+    .abl-initial{width:26px; height:26px; border-radius:50%; display:inline-grid; place-items:center;
+      background:#e6f0ff; color:#0a56cc; font-weight:900; font-size:12px;}
+    .abl-name{font-weight:800;}
+    .abl-role{color:#97a1ad; font-size:.9em;}
+    .abl-shift{font-variant-numeric:tabular-nums;}
+    .abl-live{color:#00b341; font-weight:900;}
+    .abl-done{color:#9aa3ad; font-weight:700;}
+    .abl-actions{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+    .abl-actions button{border:0; border-radius:10px; padding:6px 10px; font-weight:800; cursor:pointer;}
+    .abl-send-today{background:#007bff; color:#fff;}
+    .abl-send-tom{background:#00b341; color:#fff;}
+    .abl-call{background:#f2f6ff; color:#0a56cc;}
+    .abl-foot{padding:10px 16px; border-top:1px solid #eef2f6; display:flex; gap:10px; align-items:center; justify-content:space-between;}
+    .abl-foot .totals{font-weight:900; color:#0a56cc;}
+    .abl-note{color:#97a1ad; font-size:.92em;}
+  `;
+  document.head.appendChild(s);
+})();
+
+/* ---------- Helpers de grupo ---------- */
+const ABL_MANUAL = {
+  back:  new Set([/* 'correo@...' */]),
+  front: new Set([/* 'correo@...' */]),
+  cash:  new Set([/* 'correo@...' */]),
+  driver:new Set([/* 'correo@...' */]),
+  crew:  new Set([/* 'correo@...' */]),
+};
+
+function ablGroupOf(emp){
+  const email = String(emp.email||"").toLowerCase();
+  for (const k of ["back","front","cash","driver","crew"]) if (ABL_MANUAL[k].has(email)) return k;
+
+  const g = String(emp.group||emp.team||"").toLowerCase();
+  if (/cash|caja|register/.test(g)) return "cash";
+  if (/front|greeter|delan/.test(g)) return "front";
+  if (/back|detail|line|tunnel|wash|machine|máquina|detalle/.test(g)) return "back";
+
+  const r = String(emp.role||emp.position||emp.title||"").toLowerCase();
+  if (/cash|caja|register/.test(r)) return "cash";
+  if (/driver|drive/.test(r))       return "driver";
+  if (/front|greeter/.test(r))      return "front";
+  if (/back|detail|line|tunnel|wash/.test(r)) return "back";
+
+  return "crew";
+}
+function ablInit(name){ return (name||"?").split(/\s+/).map(p=>p[0]||"").join("").slice(0,2).toUpperCase(); }
+function ablFmtShift(s){ return String(s||"-").trim().replace(/\s-\s/g, '\u00A0–\u00A0'); }
+
+/* ---------- Estado ---------- */
+let __ablAbort = null;
+let __ablData = {
+  byGroup: { back:[], front:[], cash:[], driver:[], crew:[] },
+  completed: [],
+  totals: { back:0, front:0, cash:0, driver:0, crew:0, all:0 }
+};
+
+/* ---------- Lógica de “activo ahora” y “completado” ---------- */
+function ablParseRange(shift){
+  const t = String(shift||"").trim();
+  if (!t || /^(-|off|n\/a)$/i.test(t)) return null;
+  if (/\.$/.test(t)) return { kind:"live", start: parseTime(t.replace(/\.$/,"").trim())||null };
+  const p = t.split("-"); if (p.length!==2) return { kind:"other" };
+  const a = parseTime(p[0].trim()); const b = parseTime(p[1].trim());
+  if (!a || !b) return { kind:"other" };
+  return { kind:"range", start:a, end:b };
+}
+function ablIsActiveNow(shift){
+  const info = ablParseRange(shift);
+  if (!info) return false;
+  if (info.kind==="live" && info.start) return Date.now() >= info.start.getTime();
+  if (info.kind==="range" && info.start && info.end){
+    const now=Date.now(); return now>=info.start.getTime() && now<=info.end.getTime();
+  }
+  return false;
+}
+function ablIsCompletedToday(shift){
+  const info = ablParseRange(shift);
+  if (!info) return false;
+  if (info.kind==="range" && info.end){
+    return Date.now() > info.end.getTime();
+  }
+  return false;
+}
+
+/* ---------- UI ---------- */
+function ablClose(){ try{ __ablAbort?.abort(); }catch{} __ablAbort=null; document.getElementById('ablOverlay')?.remove(); }
+
+function ablSectionHTML(key, title){
+  return `
+    <div class="abl-section" data-group="${key}">
+      <div class="abl-sec-head">
+        <span class="abl-badge ${key}">${title}</span>
+        <span class="abl-count" id="abl-count-${key}">Activos: 0</span>
+      </div>
+      <div class="abl-grid" id="abl-grid-${key}"></div>
+    </div>
+  `;
+}
+function ablCardHTML(emp, today, isLive, isDone){
+  const tel = emp.phone ? `<button class="abl-call" data-tel="${emp.phone}">Call</button>` : "";
+  const liveTag = isLive ? `<span class="abl-live">• LIVE</span>` : (isDone ? `<span class="abl-done">DONE</span>` : "");
+  return `
+    <div class="abl-cardp" data-email="${cssEscape(emp.email)}">
+      <div class="abl-top">
+        <span class="abl-initial">${ablInit(emp.name)}</span>
+        <div>
+          <div class="abl-name">${emp.name} ${liveTag}</div>
+          <div class="abl-role">${emp.role||""}</div>
+        </div>
+      </div>
+      <div class="abl-shift">Today: <b>${ablFmtShift(today.shift||"-")}</b> • ${Number(today.hours||0).toFixed(1)}h</div>
+      <div class="abl-actions">
+        <button class="abl-send-today" data-act="sendtoday" data-email="${cssEscape(emp.email)}">Send Today</button>
+        <button class="abl-send-tom"   data-act="sendtomorrow" data-email="${cssEscape(emp.email)}">Send Tomorrow</button>
+        ${tel}
+      </div>
+    </div>
+  `;
+}
+
+window.openBoardLite = async function openBoardLite(){
+  ablClose();
+  const overlay = document.createElement('div'); overlay.id='ablOverlay';
+  overlay.innerHTML = `
+    <div class="abl-card">
+      <div class="abl-head">
+        <button class="abl-pill" data-nav="-1">‹ Week</button>
+        <h3>Board (lite)</h3>
+        <div class="spacer"></div>
+        <div class="abl-date"></div>
+        <button class="abl-close">×</button>
+      </div>
+      <div class="abl-sub">
+        <span class="abl-chip" id="abl-total">Activos: 0</span>
+        <span class="abl-note">Solo muestra personas <b>activas ahora</b> por grupo.</span>
+      </div>
+      <div class="abl-body">
+        ${ablSectionHTML("back","BACK")}
+        ${ablSectionHTML("front","FRONT")}
+        ${ablSectionHTML("cash","CASHIERS")}
+        ${ablSectionHTML("driver","DRIVERS")}
+        ${ablSectionHTML("crew","CREW")}
+        <div class="abl-section" id="abl-completed">
+          <div class="abl-sec-head">
+            <span class="abl-badge crew">COMPLETED TODAY</span>
+            <span class="abl-count" id="abl-count-done">Total: 0</span>
+          </div>
+          <div class="abl-grid" id="abl-grid-done"></div>
+        </div>
+      </div>
+      <div class="abl-foot">
+        <div class="totals" id="abl-totals-foot">Activos: 0</div>
+        <div class="abl-note">Tip: Los botones “Send” usan las mismas rutas que A3/B3 del Script.</div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  overlay.addEventListener('click', (e)=>{ if (e.target===overlay) ablClose(); });
+  overlay.querySelector('.abl-close').onclick = ablClose;
+  overlay.querySelector('[data-nav="-1"]').onclick = ()=> toast?.("Use Weekly si quieres semana -1","info");
+
+  // Fecha bonita
+  const dd = new Date().toLocaleDateString("en-US",{weekday:"long", month:"short", day:"numeric"});
+  overlay.querySelector('.abl-date').textContent = dd;
+
+  // Carga datos
+  await ablLoadAndRender(overlay);
+
+  // Binds: enviar y llamar
+  overlay.addEventListener('click', async (ev)=>{
+    const btn = ev.target.closest('button'); if (!btn) return;
+    if (btn.dataset.act && btn.dataset.email){
+      sendShiftMessage(btn.dataset.email, btn.dataset.act);
+    } else if (btn.dataset.tel){
+      location.href = `tel:${btn.dataset.tel}`;
+    }
+  });
+
+  // Actualiza cada 2 min (solo estados)
+  overlay.__ablTimer && clearInterval(overlay.__ablTimer);
+  overlay.__ablTimer = setInterval(()=> ablRefreshStates(overlay), 120000);
+};
+
+async function ablLoadAndRender(root){
+  try{
+    __ablAbort?.abort(); __ablAbort = new AbortController();
+
+    const dir = await API.getDirectory(__ablAbort);
+    const list = (dir?.directory||[]).slice().sort(bySheetOrder);
+
+    // Reset acumuladores
+    __ablData = {
+      byGroup: { back:[], front:[], cash:[], driver:[], crew:[] },
+      completed: [],
+      totals: { back:0, front:0, cash:0, driver:0, crew:0, all:0 }
+    };
+
+    const todayKey = Today.key;
+
+    await runLimited(list, 4, async (emp)=>{
+      let sched = null;
+      try{ sched = await API.getSchedule(emp.email, 0, __ablAbort); }catch{}
+      if (!sched?.ok) return;
+
+      const d = (sched.days||[]).find(x=> x.name.slice(0,3).toLowerCase()===todayKey) || {};
+      const shift = String(d.shift||"").trim();
+      if (!shift || /^(-|off|n\/a)$/i.test(shift)) return;
+
+      const g = ablGroupOf(emp);
+      const isLive = ablIsActiveNow(shift);
+      const isDone = !isLive && ablIsCompletedToday(shift);
+
+      if (isLive){
+        __ablData.byGroup[g].push({ emp, d });
+        __ablData.totals[g]++; __ablData.totals.all++;
+      } else if (isDone){
+        __ablData.completed.push({ emp, d, g });
+      }
+    });
+
+    // Pintar grupos activos
+    for (const key of ["back","front","cash","driver","crew"]){
+      const grid = root.querySelector(`#abl-grid-${key}`), counter = root.querySelector(`#abl-count-${key}`);
+      const arr = __ablData.byGroup[key];
+      grid.innerHTML = arr.map(x=> ablCardHTML(x.emp, x.d, /*live*/true, /*done*/false)).join("") || `<div style="opacity:.6">— No active</div>`;
+      counter.textContent = `Activos: ${__ablData.totals[key]||0}`;
+    }
+
+    // Pintar completados
+    const doneGrid = root.querySelector('#abl-grid-done'), doneCount=root.querySelector('#abl-count-done');
+    doneGrid.innerHTML = __ablData.completed.map(x=> ablCardHTML(x.emp, x.d, /*live*/false, /*done*/true)).join("") || `<div style="opacity:.6">— Vacío</div>`;
+    doneCount.textContent = `Total: ${__ablData.completed.length}`;
+
+    // Totales
+    const tot = __ablData.totals.all||0;
+    root.querySelector('#abl-total').textContent = `Activos: ${tot}`;
+    root.querySelector('#abl-totals-foot').textContent = `Activos: ${tot}`;
+
+  }catch(e){
+    console.warn(e);
+    toast?.("❌ Error loading board","error");
+  }
+}
+
+async function ablRefreshStates(root){
+  try{
+    // Solo recalcular “live/done” en base a shifts ya cargados (barato)
+    const recalc = (shift)=>({ live: ablIsActiveNow(shift), done: ablIsCompletedToday(shift) });
+
+    // Recalcula agrupados
+    let allLive = 0;
+    for (const key of ["back","front","cash","driver","crew"]){
+      const grid = root.querySelector(`#abl-grid-${key}`);
+      const arr = __ablData.byGroup[key];
+      let html = "";
+      let liveCount = 0;
+      for (const x of arr){
+        const state = recalc(String(x.d.shift||""));
+        if (state.live){ liveCount++; html += ablCardHTML(x.emp, x.d, true, false); }
+      }
+      grid.innerHTML = html || `<div style="opacity:.6">— No active</div>`;
+      root.querySelector(`#abl-count-${key}`).textContent = `Activos: ${liveCount}`;
+      __ablData.totals[key] = liveCount; allLive += liveCount;
+    }
+    root.querySelector('#abl-total').textContent = `Activos: ${allLive}`;
+    root.querySelector('#abl-totals-foot').textContent = `Activos: ${allLive}`;
+
+    // Recalcula completados (si alguno dejó de estar activo y ya terminó)
+    const newDone = [];
+    for (const key of ["back","front","cash","driver","crew"]){
+      for (const x of __ablData.byGroup[key]){
+        const st = recalc(String(x.d.shift||""));
+        if (!st.live && st.done) newDone.push({ emp:x.emp, d:x.d, g:key });
+      }
+    }
+    if (newDone.length){
+      __ablData.completed = newDone; // refresca
+      const doneGrid = root.querySelector('#abl-grid-done');
+      const doneCount = root.querySelector('#abl-count-done');
+      doneGrid.innerHTML = newDone.map(x=> ablCardHTML(x.emp, x.d, false, true)).join("");
+      doneCount.textContent = `Total: ${newDone.length}`;
+    }
+  }catch(e){ console.warn(e); }
+}
+
+/* ---------- Botón flotante y hook al Welcome ---------- */
+window.addBoardButton = function addBoardButton(){
+  if (document.getElementById("boardLiteBtn")) return;
+  const b = document.createElement("button");
+  b.id = "boardLiteBtn";
+  b.textContent = "Board (lite)";
+  Object.assign(b.style, {
+    position:"fixed", top:"12px", right:"228px", zIndex: 9999,
+    padding:"8px 12px", borderRadius:"12px", border:"0",
+    background:"#e60000", color:"#fff", fontWeight:"800",
+    boxShadow:"0 6px 16px rgba(230,0,0,.35)", cursor:"pointer"
+  });
+  b.onclick = ()=> openBoardLite();
+  document.body.appendChild(b);
+};
+
+// Enganche automático al Welcome (no necesitas tocar tu showWelcome)
+(function hookWelcomeForBoard(){
+  const prev = window.showWelcome;
+  if (typeof prev === "function"){
+    window.showWelcome = async function(name, role){
+      const r = await prev.apply(this, arguments);
+      if (isManagerRole(role)) window.addBoardButton?.();
+      return r;
+    };
+  } else {
+    // Fallback: si ya hay currentUser, intenta inyectar tras load
+    setTimeout(()=>{ if (isManagerRole(window.currentUser?.role)) window.addBoardButton?.(); }, 800);
+  }
+})();

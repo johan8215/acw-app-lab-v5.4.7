@@ -2131,3 +2131,109 @@ window.addBoardEditorButton = function addBoardEditorButton(){
   }catch{}
 })();
 
+// === DIAG v1 (seguro) ==================================================
+function diagnose(e){
+  var t0 = Date.now();
+  function jsonOut(o){
+    return ContentService.createTextOutput(JSON.stringify(o,null,2))
+     .setMimeType(ContentService.MimeType.JSON);
+  }
+  function normEmail(s){ return String(s||"").trim().toLowerCase(); }
+
+  var tz = Session.getScriptTimeZone() || "America/New_York";
+  var emailIn  = e && (e.parameter.email || e.parameter.user || e.parameter.target) || "";
+  var email    = normEmail(emailIn);
+  var offset   = parseInt(e && e.parameter.offset,10) || 0;
+
+  // Semana anclada a MEDIODÍA (evita bug DST a medianoche)
+  var now = new Date();
+  var mon = new Date(now.getFullYear(), now.getMonth(), now.getDate()); // fecha local
+  mon.setHours(12,0,0,0);                       // ancla a 12:00
+  var dow = mon.getDay();                       // 0=Dom, 1=Lun...
+  var diffMon = (dow + 6) % 7;                  // distancia a Lunes
+  mon.setDate(mon.getDate() - diffMon - (offset*7));
+  var sun = new Date(mon); sun.setDate(mon.getDate()+6);
+
+  var ss = SpreadsheetApp.getActive(); // asume script ligado al Sheet
+  var out = {
+    ok:true,
+    time:(new Date()).toISOString(),
+    tz: tz,
+    weekLabel: Utilities.formatDate(mon,tz,"MMM d")+" – "+Utilities.formatDate(sun,tz,"MMM d"),
+    email_in: emailIn,
+    email_norm: email,
+    offset: offset,
+    sheets: ss.getSheets().map(function(s){return s.getName();}),
+    found: [],
+    sample: [],
+    notes: []
+  };
+
+  try{
+    if (!email){ out.notes.push("NO_EMAIL_PARAM"); return jsonOut(out); }
+
+    // Busca el email en TODO el libro (sin distinguir may/min)
+    var finder = ss.createTextFinder(email).matchCase(false).matchFormulaText(false);
+    var matches = finder.findAll() || [];
+    if (!matches.length){
+      out.notes.push("EMAIL_NOT_FOUND_IN_SPREADSHEET");
+      return jsonOut(fixAndReturn());
+    }
+    out.found = matches.slice(0,5).map(function(r){
+      return { sheet:r.getSheet().getName(), row:r.getRow(), col:r.getColumn(), value:String(r.getValue()) };
+    });
+
+    // Toma el primer match y trata de muestrear 7 días alrededor (si hay encabezados)
+    var m  = matches[0], sh = m.getSheet();
+    var headerRow = Math.max(1, m.getRow()-10);
+    var lastRow   = Math.min(sh.getMaxRows(), m.getRow()+10);
+    var range = sh.getRange(headerRow,1,lastRow-headerRow+1, Math.min(sh.getMaxColumns(), 40)).getDisplayValues();
+
+    // adivina columnas por cabeceras
+    var mapCols = {};
+    var hdrIdx = -1;
+    for (var i=0;i<range.length;i++){
+      var row = range[i].map(function(x){ return String(x||"").toLowerCase(); });
+      var hits = 0;
+      [["mon","monday"],["tue","tuesday"],["wed","wednesday"],
+       ["thu","thursday"],["fri","friday"],["sat","saturday"],["sun","sunday"]]
+       .forEach(function(pair){
+         var j = row.findIndex(function(v){ return v===pair[0] || v===pair[1]; });
+         if (j>=0){ mapCols[pair[0].slice(0,3)] = j+1; hits++; }
+       });
+      if (hits>=3){ hdrIdx = i; break; } // halló cabeceras
+    }
+
+    if (hdrIdx>=0){
+      var dataRow = headerRow + hdrIdx + (m.getRow() - (headerRow + hdrIdx)); // misma fila del match
+      var days = [["mon","Mon"],["tue","Tue"],["wed","Wed"],["thu","Thu"],["fri","Fri"],["sat","Sat"],["sun","Sun"]];
+      out.sample = days.map(function(dk){
+        var c = mapCols[dk[0]];
+        var val = c ? sh.getRange(dataRow, c).getDisplayValue() : "";
+        return { name: dk[1], shift: val || "-" };
+      });
+    } else {
+      out.notes.push("HEADERS_NOT_DETECTED_NEAR_MATCH");
+    }
+
+    return jsonOut(fixAndReturn());
+
+  }catch(err){
+    out.notes.push("EX:"+err.message);
+    return jsonOut(fixAndReturn());
+  }
+
+  function fixAndReturn(){
+    out.ms = Date.now()-t0;
+    return out;
+  }
+}
+
+// Agrega esta ruta en tu doGet:
+function doGet(e){
+  var action = (e && e.parameter && (e.parameter.action||"")).toLowerCase();
+  if (action==="diagnose" || action==="diag") return diagnose(e);
+  // ...tus rutas existentes...
+  return ContentService.createTextOutput('{"ok":false,"error":"no_action"}')
+    .setMimeType(ContentService.MimeType.JSON);
+}

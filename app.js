@@ -1671,3 +1671,18 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
 
   window.ACW_TEST = { run };
 })();
+// ▶ Auto-diag por URL: ...?diag=1
+(function(){
+  try{
+    const q = new URLSearchParams(location.search);
+    if (q.get("diag")==="1" && window.ACW_TEST){
+      const saved = localStorage.getItem("acwDiagEmail") || (window.currentUser?.email || "");
+      const email = saved || prompt("ACW email:");
+      const password = prompt("Password:");
+      if (email && password){
+        localStorage.setItem("acwDiagEmail", email);
+        ACW_TEST.run({ email, password });
+      }
+    }
+  }catch(e){}
+})();

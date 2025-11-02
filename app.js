@@ -1358,3 +1358,45 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   `;
   document.head.appendChild(s);
 })();
+
+// === ACW — Botón de diagnóstico ultra-rápido ===
+(function addACWDiag(){
+  if (document.getElementById('acwDiagBtn')) return;
+  const b=document.createElement('button');
+  b.id='acwDiagBtn'; b.textContent='🔎 Diag';
+  Object.assign(b.style,{
+    position:'fixed',bottom:'14px',right:'14px',zIndex:99999,
+    padding:'8px 10px',borderRadius:'10px',border:'0',
+    background:'#0a84ff',color:'#fff',fontWeight:'700',opacity:.85,
+    boxShadow:'0 6px 14px rgba(0,0,0,.25)',cursor:'pointer'
+  });
+  b.onclick = async ()=>{
+    const base = CONFIG.BASE_URL;
+    const me = (window.currentUser?.email||"").trim();
+    const out = {};
+    async function j(u){ try{const r=await fetch(u,{cache:'no-store'}); return await r.json();}catch(e){return {error:e.message||'net_error'};}}
+    out.ping = await j(base+'?action=ping');
+    out.diag = await j(base+'?action=diag');
+    out.dir  = await j(base+'?action=getEmployeesDirectory');
+    if (me){
+      out.sched0  = await j(base+`?action=getSmartSchedule&email=${encodeURIComponent(me)}&offset=0&debug=1`);
+      out.sched_1 = await j(base+`?action=getSmartSchedule&email=${encodeURIComponent(me)}&offset=-1&debug=1`);
+    } else {
+      out.note='No currentUser (haz login primero)';
+    }
+    const pre = document.createElement('pre');
+    pre.style.cssText='white-space:pre-wrap;max-height:72vh;overflow:auto;background:#111;color:#0f0;padding:12px;border-radius:12px;font-size:12px';
+    pre.textContent = JSON.stringify(out,null,2);
+
+    const box=document.createElement('div');
+    box.style.cssText='background:#fff;padding:10px;border-radius:12px;max-width:92vw';
+    box.appendChild(pre);
+
+    const m=document.createElement('div');
+    m.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,.5);display:flex;align-items:center;justify-content:center;z-index:99998';
+    m.onclick=e=>{ if(e.target===m) m.remove(); };
+    m.appendChild(box);
+    document.body.appendChild(m);
+  };
+  document.body.appendChild(b);
+})();

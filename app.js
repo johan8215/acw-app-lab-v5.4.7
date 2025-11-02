@@ -1358,3 +1358,316 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   `;
   document.head.appendChild(s);
 })();
+/* ============================================================
+   🔧 ACW_TEST v1.3 — Diagnóstico integral (no destructivo)
+   JAG15 & Sky — Nov 2025
+   - Verifica: CONFIG/BASE_URL, PWA/SW y cachés, ping/login,
+     SmartSchedule (0..4), Directory, sendToday/sendTomorrow (dry),
+     Today.key, caché TTL + de-dupe, elementos UI base.
+   - Muestra un panel con resultados + consola con tabla y JSON.
+   ============================================================ */
+(function(){
+  const enc = encodeURIComponent;
+  const nowShort = ()=> new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase();
+
+  async function j(url){
+    try{
+      const r = await fetch(url + (url.includes("?")?"&":"?") + "_t=" + Date.now(), {cache:"no-store"});
+      return await r.json();
+    }catch(e){ return { ok:false, error:String(e&&e.message||e||"net_error") }; }
+  }
+
+  function statusEmoji(s){ return s==="ok"?"🟢":s==="warn"?"🟡":s==="skip"?"⚪":"🔴"; }
+  function asRow(c){ return { id:c.id, status:c.status, ok:c.ok, note:c.note||"", fix:c.fix||"" }; }
+
+  const FIX = {
+    set_config_base_url: "Configura CONFIG.BASE_URL (Apps Script web app ‘exec’ correcto y público).",
+    gas_ping:             "Agrega action=ping en doGet(e) o revisa despliegue.",
+    gas_login:            "Revisa action=login (credenciales/ACL/Scopes).",
+    gas_schedule:         "Revisa action=getSmartSchedule (7 días, total numérico, soporta &offset).",
+    gas_directory:        "Revisa action=getEmployeesDirectory (lista vacía o error).",
+    gas_send_today:       "Revisa action=sendtoday (acepte ?actor&target&dry=1).",
+    gas_send_tomorrow:    "Revisa action=sendtomorrow (acepte ?actor&target&dry=1).",
+    sw_not_registered:    "Service Worker no registrado: verifica sw.js y https/localhost.",
+    sw_cache_version:     "Actualiza CACHE_NAME en sw.js o CONFIG.VERSION para limpiar caché vieja.",
+    today_key_mismatch:   "Bug en Today.key: normaliza TZ/locale o reinicio de medianoche.",
+    dedupe_cache:         "fetchJSON sin de-dupe/TTL efectivo; revisar Net/TTL o doble definición.",
+    ui_missing_nodes:     "Faltan nodos #login/#welcome/#schedule/#settingsModal en index.html."
+  };
+
+  function makeOverlay(){
+    const css = `
+      #acwdiag{position:fixed;inset:0;background:rgba(0,0,0,.45);backdrop-filter:blur(4px);z-index:99999;display:flex;align-items:center;justify-content:center;font-family:system-ui,Segoe UI,Roboto,Arial}
+      #acwdiag .card{width:560px;max-width:92vw;background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);padding:18px 18px 12px;color:#1e1e1e}
+      #acwdiag h3{margin:0 0 4px;color:#0a84ff}
+      #acwdiag .sub{color:#667; font-size:12px;margin-bottom:6px}
+      #acwdiag table{width:100%;border-collapse:separate;border-spacing:0 6px;font-size:14px}
+      #acwdiag td{background:#f7f9fc;padding:8px 10px;border-radius:8px}
+      #acwdiag td:first-child{width:56px;text-align:center}
+      #acwdiag .row.fail td{background:#ffecec}
+      #acwdiag .row.warn td{background:#fff7e6}
+      #acwdiag .btns{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+      #acwdiag button{background:#e60000;color:#fff;border:0;border-radius:10px;padding:8px 12px;font-weight:700;cursor:pointer}
+      #acwdiag .ghost{background:#fff;color:#0a84ff;border:2px solid rgba(10,132,255,.35)}
+    `;
+    if (!document.getElementById("acwdiag-css")){
+      const s=document.createElement("style"); s.id="acwdiag-css"; s.textContent=css; document.head.appendChild(s);
+    }
+    const root=document.createElement("div"); root.id="acwdiag";
+    root.innerHTML = `
+      <div class="card">
+        <div style="display:flex;align-items:center;justify-content:space-between">
+          <h3>ACW — Diagnóstico</h3>
+          <button class="ghost" id="acwdiag-close">Cerrar</button>
+        </div>
+        <div class="sub">Resultados en la página y en la consola (tabla + JSON).</div>
+        <div id="acwdiag-body"></div>
+        <div class="btns">
+          <button class="ghost" id="acwdiag-copy">Copiar JSON</button>
+          <button id="acwdiag-share">Share (imagen)</button>
+        </div>
+      </div>`;
+    document.body.appendChild(root);
+    root.querySelector("#acwdiag-close").onclick = ()=> root.remove();
+
+    // Share como imagen (sin dependencias externas)
+    root.querySelector("#acwdiag-share").onclick = async ()=>{
+      const el = root.querySelector(".card");
+      try{
+        // mini html2canvas inline (import dinámico)
+        if(!window.html2canvas){
+          const s=document.createElement("script");
+          s.src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+          await new Promise((ok,ko)=>{ s.onload=ok; s.onerror=ko; document.head.appendChild(s); });
+        }
+        const c = await html2canvas(el,{backgroundColor:"#ffffff",scale: Math.min(3, window.devicePixelRatio||2)});
+        c.toBlob(b=>{
+          const file = new File([b], "ACW_Diag.png", {type:"image/png"});
+          if(navigator.canShare && navigator.canShare({files:[file]})){
+            navigator.share({files:[file]}).catch(()=>{});
+          }else{
+            const url=URL.createObjectURL(b); open(url,"_blank");
+          }
+        });
+      }catch{}
+    };
+    return root;
+  }
+
+  function renderOverlay(root, list, meta){
+    const body = root.querySelector("#acwdiag-body");
+    const rows = list.map(c=>{
+      const cls = c.status==="fail"?"row fail":c.status==="warn"?"row warn":"row";
+      return `<tr class="${cls}">
+        <td>${statusEmoji(c.status)}</td>
+        <td><b>${c.label}</b><div style="color:#667;font-size:12px">${c.note||""}</div></td>
+        <td style="text-align:right">${c.fix?`<span style="color:#e60000;font-weight:700">${c.fix}</span>`:""}</td>
+      </tr>`;
+    }).join("");
+    body.innerHTML = `
+      <table>${rows}</table>
+      <div class="sub" style="margin-top:6px">BASE_URL: ${meta.base||"<vacío>"} • VERSION: ${meta.version||"?"} • SW: ${meta.sw||"—"}</div>
+    `;
+
+    root.querySelector("#acwdiag-copy").onclick = async ()=>{
+      try{
+        await navigator.clipboard.writeText(JSON.stringify({meta, checks:list.map(asRow)}, null, 2));
+        alert("JSON copiado");
+      }catch{ alert("No se pudo copiar"); }
+    };
+  }
+
+  async function run(opts={}){
+    const BASE = (window.CONFIG && CONFIG.BASE_URL) || "";
+    const CFGV = (window.CONFIG && CONFIG.VERSION) || "";
+    const checks = [];
+    const meta = { base: BASE, version: CFGV, sw: "" };
+
+    function push({id,label,ok,status,note,fix}){ checks.push({id,label,ok,status,note,fix}); }
+
+    // 0) CONFIG & entorno
+    push({
+      id:"base_url", label:"CONFIG.BASE_URL",
+      ok: !!BASE, status: !!BASE?"ok":"fail",
+      note: BASE||"vacío", fix: !!BASE?"":FIX.set_config_base_url
+    });
+
+    // 1) Service Worker + cachés
+    let swReg = "n/a", cacheKey="";
+    try{
+      if ("serviceWorker" in navigator){
+        const regs = await navigator.serviceWorker.getRegistrations();
+        swReg = regs.length? "registered":"not registered";
+        meta.sw = swReg;
+        const keys = await caches.keys();
+        cacheKey = (keys||[]).find(k=>/acw-cache-/i.test(k)) || "";
+        const vFromCache = cacheKey.replace(/^.*v/i,"v");
+        const vMatch = CFGV && vFromCache && CFGV.includes(vFromCache);
+        push({
+          id:"sw_registered", label:"Service Worker",
+          ok: regs.length>0, status: regs.length>0?"ok":"warn",
+          note: regs.length?`ok (${cacheKey||"sin caché estática"})`:"no registrado",
+          fix: regs.length? ( (CFGV && cacheKey && !vMatch) ? FIX.sw_cache_version : "" ) : FIX.sw_not_registered
+        });
+        if (CFGV && cacheKey && !vMatch){
+          push({
+            id:"sw_cache_version", label:"Versión de caché (SW vs CONFIG)",
+            ok:false, status:"warn",
+            note:`CONFIG.VERSION=${CFGV} • CACHE=${cacheKey}`,
+            fix: FIX.sw_cache_version
+          });
+        }
+      }else{
+        push({id:"sw_support", label:"Service Worker", ok:false, status:"warn", note:"no soportado", fix:""});
+      }
+    }catch{
+      push({id:"sw_error", label:"Service Worker", ok:false, status:"warn", note:"error consultando SW", fix:""});
+    }
+
+    // 2) PING
+    let ping = BASE? await j(`${BASE}?action=ping`) : {};
+    push({
+      id:"ping", label:"Backend ping",
+      ok: !!ping.ok, status: ping.ok?"ok":"fail",
+      note: ping.ok?(`version: ${ping.version||"?"}`): (ping.error||"error"),
+      fix: ping.ok?"":FIX.gas_ping
+    });
+
+    // 3) LOGIN
+    let login = {};
+    if (opts.email && opts.password){
+      login = BASE? await j(`${BASE}?action=login&email=${enc(opts.email)}&password=${enc(opts.password)}`) : {};
+      push({
+        id:"login", label:"Login",
+        ok: !!login.ok, status: login.ok?"ok":"fail",
+        note: login.ok?`${login.name||login.email||"ok"} • role=${login.role||"?"}`:(login.error||"fail"),
+        fix: login.ok?"":FIX.gas_login
+      });
+    }else{
+      push({id:"login", label:"Login", ok:false, status:"warn", note:"sin credenciales (pásalas a ACW_TEST.run)", fix:""});
+    }
+
+    // 4) DIRECTORY
+    let dir = BASE? await j(`${BASE}?action=getEmployeesDirectory`) : {};
+    const dlen = Array.isArray(dir.directory)? dir.directory.length : 0;
+    push({
+      id:"directory", label:"Employees Directory",
+      ok: !!dir.ok && dlen>0, status: (!!dir.ok && dlen>0)?"ok":"warn",
+      note: dir.ok?`items=${dlen}`:(dir.error||"error"),
+      fix: (!!dir.ok && dlen>0)?"":FIX.gas_directory
+    });
+
+    // 5) SCHEDULE (0..4)
+    if (opts.email && BASE){
+      for(let off=0; off<5; off++){
+        const sc = await j(`${BASE}?action=getSmartSchedule&email=${enc(opts.email)}&offset=${off}`);
+        const days = Array.isArray(sc.days)? sc.days.length : 0;
+        push({
+          id:`sched_${off}`, label:`SmartSchedule (week -${off})`,
+          ok: !!sc.ok && days>0, status: (!!sc.ok && days===7)?"ok": (!!sc.ok ? "warn":"fail"),
+          note: sc.ok?`${sc.weekLabel||"(sin label)"} • days=${days} • total=${sc.total}`:(sc.error||"error"),
+          fix: sc.ok? (days===7?"":FIX.gas_schedule) : FIX.gas_schedule
+        });
+      }
+    }else{
+      push({id:"sched", label:"SmartSchedule", ok:false, status:"warn", note:"sin email/base", fix:""});
+    }
+
+    // 6) SEND (dry run)
+    if (opts.email && login.ok){
+      const actor = login.email;
+      const tgt = opts.target || actor;
+      const st  = await j(`${BASE}?action=sendtoday&actor=${enc(actor)}&target=${enc(tgt)}&dry=1`);
+      const stm = await j(`${BASE}?action=sendtomorrow&actor=${enc(actor)}&target=${enc(tgt)}&dry=1`);
+      push({
+        id:"sendtoday", label:"Send Today (dry)",
+        ok: !!st.ok, status: st.ok?"ok":"warn",
+        note: st.ok?`→ ${st.sent?.shift||"-"}`:(st.error||"error"),
+        fix: st.ok?"":FIX.gas_send_today
+      });
+      push({
+        id:"sendtomorrow", label:"Send Tomorrow (dry)",
+        ok: !!stm.ok, status: stm.ok?"ok":"warn",
+        note: stm.ok?`→ ${stm.sent?.shift||"-"}`:(stm.error||"error"),
+        fix: stm.ok?"":FIX.gas_send_tomorrow
+      });
+    }else{
+      push({id:"send", label:"Send Today/Tomorrow", ok:false, status:"skip", note:"sin login (omitido)", fix:""});
+    }
+
+    // 7) Today.key
+    try{
+      const tk = (window.Today && Today.key) || "(no Today)";
+      const expect = nowShort();
+      push({
+        id:"today_key", label:"Today.key",
+        ok: tk===expect, status: tk===expect?"ok":"warn",
+        note:`Today.key=${tk} • expect=${expect}`,
+        fix: tk===expect?"":FIX.today_key_mismatch
+      });
+    }catch{
+      push({id:"today_key", label:"Today.key", ok:false, status:"warn", note:"no definido", fix:FIX.today_key_mismatch});
+    }
+
+    // 8) De-dupe/TTL de fetchJSON
+    try{
+      if (typeof window.fetchJSON === "function" && BASE){
+        const url = `${BASE}?action=ping`;
+        const a = await fetchJSON(url,{ttl:10000});
+        const b = await fetchJSON(url,{ttl:10000});
+        const sameRef = (a && b) ? (a===b) : false;
+        push({
+          id:"dedupe", label:"Cache TTL + de-dupe",
+          ok: sameRef, status: sameRef?"ok":"warn",
+          note: sameRef?"OK (mismo objeto cacheado)":"Devuelve objetos distintos (posible de-dupe inefectivo)",
+          fix: sameRef?"":FIX.dedupe_cache
+        });
+      }else{
+        push({id:"dedupe", label:"Cache TTL + de-dupe", ok:false, status:"skip", note:"fetchJSON no disponible", fix:""});
+      }
+    }catch{
+      push({id:"dedupe", label:"Cache TTL + de-dupe", ok:false, status:"warn", note:"error al probar", fix:FIX.dedupe_cache});
+    }
+
+    // 9) UI básicos presentes
+    const needed = ["#login", "#welcome", "#schedule", "#settingsModal"];
+    const missing = needed.filter(sel => !document.querySelector(sel));
+    push({
+      id:"ui_nodes", label:"UI nodos base",
+      ok: missing.length===0, status: missing.length===0?"ok":"warn",
+      note: missing.length?("faltan: "+missing.join(", ")):"ok",
+      fix: missing.length?FIX.ui_missing_nodes:""
+    });
+
+    // Consola y overlay
+    const root = makeOverlay();
+    const list = checks.map(c=>({
+      id:c.id,
+      label: ({
+        base_url:"CONFIG.BASE_URL",
+        sw_registered:"Service Worker",
+        sw_cache_version:"SW cache vs CONFIG",
+        ping:"Backend ping",
+        login:"Login",
+        directory:"Employees Directory",
+        today_key:"Today.key",
+        dedupe:"Cache TTL + de-dupe",
+        ui_nodes:"UI base"
+      }[c.id]) || c.label,
+      status:c.status, ok:c.ok, note:c.note, fix:c.fix
+    }));
+    renderOverlay(root, list, meta);
+
+    // Consola
+    console.group("ACW_TEST");
+    console.table(checks.map(asRow));
+    console.log("Meta:", meta);
+    console.log("Fix map:", FIX);
+    console.groupEnd();
+
+    // Retorno para uso programático
+    return { meta, checks, fix_suggestions: checks.filter(x=>x.status!=="ok").map(x=>({id:x.id, fix:x.fix})) };
+  }
+
+  window.ACW_TEST = { run };
+})();

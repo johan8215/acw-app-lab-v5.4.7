@@ -20,16 +20,23 @@ function safeText(el, txt){ if(el) el.textContent = txt; }
 function setVisible(el, show){ if(!el) return; el.style.display = show ? "" : "none"; }
 function cssEscape(s){ try{return CSS.escape(s);}catch{ return String(s).replace(/[^a-zA-Z0-9_\-]/g,"_"); } }
 
-/* Hoy cacheado + refresco a medianoche */
-const Today = (()=> {
-  let key = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase();
-  // programa cambio a medianoche
+/* === Today (timezone-safe, NY) === */
+const Today = (() => {
+  const TZ = 'America/New_York';
+  const keyOf = () =>
+    new Date().toLocaleString('en-US', { weekday: 'short', timeZone: TZ })
+      .slice(0,3).toLowerCase();
+
+  let key = keyOf();
+
+  // Refresco a medianoche + pulso cada minuto (por si la pestaña queda abierta)
   const now = new Date();
-  const next = new Date(now); next.setHours(24,0,0,0);
-  setTimeout(()=>{ key = new Date().toLocaleString("en-US",{weekday:"short"}).slice(0,3).toLowerCase(); }, next-now+50);
+  const next = new Date(now); next.setHours(24,0,0,0);         // disparo aproximado
+  setTimeout(() => { key = keyOf(); }, next - now + 50);
+  setInterval(() => { key = keyOf(); }, 60 * 1000);
+
   return { get key(){ return key; } };
 })();
-
 /* Caché en memoria con TTL + de-dupe */
 const Net = (()=> {
   const store = new Map(); // key -> {expires, value} | inflight: Promise

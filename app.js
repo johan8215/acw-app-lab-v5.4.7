@@ -1358,101 +1358,105 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   `;
   document.head.appendChild(s);
 })();
-/* ================== ACW — BOARD (LITE) v1 ================== */
-/* Tarjetas por grupo + conteo de activos + completados hoy.
-   Requiere:
-   - isManagerRole, parseTime, Today, runLimited, API.getDirectory/getSchedule,
-     sendShiftMessage, bySheetOrder, cssEscape (ya existen en tu backup).
-*/
 
-/* ---------- CSS (inserción una sola vez) ---------- */
-(function ensureBoardLiteCSS(){
-  if (document.getElementById('acw-board-lite-css')) return;
-  const s = document.createElement('style'); s.id='acw-board-lite-css';
+/* ================= ACW — BOARD (EDITOR, CARDS) v1 =================
+   Edita toda la semana por tarjetas y sincroniza a Sheets (updateShift).
+   Requisitos ya existentes en tu base:
+   - API.getDirectory(), API.getSchedule(email, offset, controller)
+   - sendShiftMessage(email, action)  // action = sendtoday | sendtomorrow
+   - runLimited(items, limit, fn)
+   - Today, parseTime, bySheetOrder, cssEscape, isManagerRole, toast
+==================================================================== */
+
+/* ---------- CSS (una sola vez) ---------- */
+(function ensureBoardEditorCSS(){
+  if (document.getElementById('abed-css')) return;
+  const s = document.createElement('style'); s.id='abed-css';
   s.textContent = `
-    #ablOverlay{position:fixed; inset:0; z-index:12000; background:rgba(5,20,40,.28); backdrop-filter:blur(2px);
+    #abedOverlay{position:fixed; inset:0; z-index:12000; background:rgba(5,20,40,.28); backdrop-filter:blur(2px);
       display:flex; align-items:center; justify-content:center;}
-    .abl-card{width:min(1100px,94vw); max-height:88vh; overflow:auto;
-      background:#fff; border-radius:16px; box-shadow:0 26px 80px rgba(0,120,255,.25);}
-    .abl-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #eef2f6;}
-    .abl-head h3{margin:0; font-size:18px; color:#0a56cc;}
-    .abl-head .spacer{flex:1;}
-    .abl-pill{background:#ff3b30; color:#fff; border:0; font-weight:800; padding:6px 10px; border-radius:10px;
+    .abed-card{width:min(1200px,95vw); max-height:88vh; overflow:hidden;
+      background:#fff; border-radius:16px; box-shadow:0 26px 80px rgba(0,120,255,.25); display:flex; flex-direction:column;}
+    .abed-head{display:flex; align-items:center; gap:10px; padding:14px 16px; border-bottom:1px solid #eef2f6;}
+    .abed-head h3{margin:0; font-size:18px; color:#0a56cc;}
+    .abed-head .spacer{flex:1;}
+    .abed-pill{background:#ff3b30; color:#fff; border:0; font-weight:800; padding:6px 10px; border-radius:10px;
       box-shadow:0 2px 8px rgba(255,59,48,.35); cursor:pointer;}
-    .abl-close{background:#f2f6ff; color:#0a56cc; border:0; font-weight:800; padding:6px 10px; border-radius:10px; cursor:pointer;}
-    .abl-sub{padding:0 16px 10px; color:#0a56cc; font-weight:800; display:flex; gap:16px; align-items:center;}
-    .abl-chip{background:#f2f6ff; color:#0a56cc; font-weight:800; border-radius:999px; padding:4px 10px; display:inline-block;}
-    .abl-body{padding:6px 16px 16px;}
-    .abl-section{margin:12px 0 18px;}
-    .abl-sec-head{display:flex; align-items:center; gap:10px; margin:6px 0 8px;}
-    .abl-badge{display:inline-block; font-weight:900; color:#fff; border-radius:10px; padding:4px 10px;}
-    .abl-badge.back{background:#0a56cc;}
-    .abl-badge.front{background:#f59e0b;}
-    .abl-badge.cash{background:#6f42c1;}
-    .abl-badge.driver{background:#374151;}
-    .abl-badge.crew{background:#607d8b;}
-    .abl-count{margin-left:auto; font-weight:900; color:#0a56cc;}
-    .abl-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(230px,1fr)); gap:10px;}
-    .abl-cardp{border:1px solid #eef2f6; border-radius:12px; padding:10px; box-shadow:0 3px 10px rgba(0,0,0,.04);}
-    .abl-top{display:flex; align-items:center; gap:10px; margin-bottom:6px;}
-    .abl-initial{width:26px; height:26px; border-radius:50%; display:inline-grid; place-items:center;
+    .abed-close{background:#f2f6ff; color:#0a56cc; border:0; font-weight:800; padding:6px 10px; border-radius:10px; cursor:pointer;}
+    .abed-sub{padding:8px 16px; color:#0a56cc; font-weight:800; display:flex; gap:16px; align-items:center;}
+    .abed-chip{background:#f2f6ff; color:#0a56cc; font-weight:800; border-radius:999px; padding:4px 10px; display:inline-block;}
+    .abed-body{padding:10px 16px 16px; overflow:auto;}
+    .abed-section{margin:12px 0 18px;}
+    .abed-sec-head{display:flex; align-items:center; gap:10px; margin:6px 0 10px;}
+    .abed-badge{display:inline-block; font-weight:900; color:#fff; border-radius:10px; padding:4px 10px;}
+    .abed-badge.back{background:#0a56cc;} .abed-badge.front{background:#f59e0b;}
+    .abed-badge.cash{background:#6f42c1;} .abed-badge.driver{background:#374151;} .abed-badge.crew{background:#607d8b;}
+    .abed-count{margin-left:auto; font-weight:900; color:#0a56cc;}
+    .abed-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px;}
+    .abed-cardp{border:1px solid #eef2f6; border-radius:12px; padding:10px; box-shadow:0 3px 10px rgba(0,0,0,.04);}
+    .abed-top{display:flex; align-items:center; gap:10px; margin-bottom:8px;}
+    .abed-initial{width:26px; height:26px; border-radius:50%; display:inline-grid; place-items:center;
       background:#e6f0ff; color:#0a56cc; font-weight:900; font-size:12px;}
-    .abl-name{font-weight:800;}
-    .abl-role{color:#97a1ad; font-size:.9em;}
-    .abl-shift{font-variant-numeric:tabular-nums;}
-    .abl-live{color:#00b341; font-weight:900;}
-    .abl-done{color:#9aa3ad; font-weight:700;}
-    .abl-actions{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
-    .abl-actions button{border:0; border-radius:10px; padding:6px 10px; font-weight:800; cursor:pointer;}
-    .abl-send-today{background:#007bff; color:#fff;}
-    .abl-send-tom{background:#00b341; color:#fff;}
-    .abl-call{background:#f2f6ff; color:#0a56cc;}
-    .abl-foot{padding:10px 16px; border-top:1px solid #eef2f6; display:flex; gap:10px; align-items:center; justify-content:space-between;}
-    .abl-foot .totals{font-weight:900; color:#0a56cc;}
-    .abl-note{color:#97a1ad; font-size:.92em;}
+    .abed-name{font-weight:800;}
+    .abed-role{color:#97a1ad; font-size:.9em;}
+    .abed-line{display:flex; gap:8px; align-items:center; margin:6px 0 0;}
+    .abed-live{color:#00b341; font-weight:900;} .abed-done{color:#9aa3ad; font-weight:700;}
+    .abed-week{margin-top:8px;}
+    .abed-week .wd{display:grid; grid-template-columns:26px 1fr; gap:6px; align-items:center; margin:4px 0;}
+    .abed-day{font-weight:800; color:#0a56cc;}
+    .abed-ed{border:1px solid #e6eefc; border-radius:8px; padding:6px 8px; min-height:30px; outline:none;
+      font-variant-numeric:tabular-nums; white-space:nowrap; overflow:auto;}
+    .abed-ed:focus{background:#eef6ff; box-shadow:inset 0 0 0 2px #bcd9ff;}
+    .abed-ed.changed{background:#fff7cc !important;}
+    .abed-ed.off{color:#9aa3ad;}
+    .abed-actions{display:flex; gap:6px; margin-top:8px; flex-wrap:wrap;}
+    .abed-actions button{border:0; border-radius:10px; padding:6px 10px; font-weight:800; cursor:pointer;}
+    .abed-send-today{background:#007bff; color:#fff;}
+    .abed-send-tom{background:#00b341; color:#fff;}
+    .abed-call{background:#f2f6ff; color:#0a56cc;}
+    .abed-save{background:#00b341; color:#fff;}
+    .abed-total{margin-top:6px; text-align:right; font-weight:900; color:#e60000;}
+    .abed-foot{padding:10px 16px; border-top:1px solid #eef2f6; display:flex; gap:10px; align-items:center; justify-content:space-between;}
+    .abed-foot .totals{font-weight:900; color:#0a56cc;}
+    .abed-note{color:#97a1ad; font-size:.92em;}
+    .abed-presets{display:flex; gap:6px; flex-wrap:wrap; margin-top:6px;}
+    .abed-presets button{background:#f2f6ff; color:#0a56cc; border:0; border-radius:999px; padding:4px 8px; font-weight:800; cursor:pointer;}
   `;
   document.head.appendChild(s);
 })();
 
-/* ---------- Helpers de grupo ---------- */
-const ABL_MANUAL = {
-  back:  new Set([/* 'correo@...' */]),
-  front: new Set([/* 'correo@...' */]),
-  cash:  new Set([/* 'correo@...' */]),
-  driver:new Set([/* 'correo@...' */]),
-  crew:  new Set([/* 'correo@...' */]),
-};
-
-function ablGroupOf(emp){
-  const email = String(emp.email||"").toLowerCase();
-  for (const k of ["back","front","cash","driver","crew"]) if (ABL_MANUAL[k].has(email)) return k;
-
-  const g = String(emp.group||emp.team||"").toLowerCase();
-  if (/cash|caja|register/.test(g)) return "cash";
-  if (/front|greeter|delan/.test(g)) return "front";
-  if (/back|detail|line|tunnel|wash|machine|máquina|detalle/.test(g)) return "back";
-
-  const r = String(emp.role||emp.position||emp.title||"").toLowerCase();
-  if (/cash|caja|register/.test(r)) return "cash";
-  if (/driver|drive/.test(r))       return "driver";
-  if (/front|greeter/.test(r))      return "front";
-  if (/back|detail|line|tunnel|wash/.test(r)) return "back";
-
-  return "crew";
-}
-function ablInit(name){ return (name||"?").split(/\s+/).map(p=>p[0]||"").join("").slice(0,2).toUpperCase(); }
-function ablFmtShift(s){ return String(s||"-").trim().replace(/\s-\s/g, '\u00A0–\u00A0'); }
+/* ---------- Utilidades de grupo (compatibles con “Board lite”) ---------- */
+(function ensureABLGroup(){
+  if (!window.ABL_MANUAL) window.ABL_MANUAL = { back:new Set(), front:new Set(), cash:new Set(), driver:new Set(), crew:new Set() };
+  if (!window.ablGroupOf){
+    window.ablGroupOf = function ablGroupOf(emp){
+      const email = String(emp.email||"").toLowerCase();
+      for (const k of ["back","front","cash","driver","crew"]) if (window.ABL_MANUAL[k].has(email)) return k;
+      const g = String(emp.group||emp.team||"").toLowerCase();
+      if (/cash|caja|register/.test(g)) return "cash";
+      if (/front|greeter|delan/.test(g)) return "front";
+      if (/back|detail|line|tunnel|wash|machine|máquina|detalle/.test(g)) return "back";
+      const r = String(emp.role||emp.position||emp.title||"").toLowerCase();
+      if (/cash|caja|register/.test(r)) return "cash";
+      if (/driver|drive/.test(r))       return "driver";
+      if (/front|greeter/.test(r))      return "front";
+      if (/back|detail|line|tunnel|wash/.test(r)) return "back";
+      return "crew";
+    };
+  }
+})();
 
 /* ---------- Estado ---------- */
-let __ablAbort = null;
-let __ablData = {
-  byGroup: { back:[], front:[], cash:[], driver:[], crew:[] },
-  completed: [],
-  totals: { back:0, front:0, cash:0, driver:0, crew:0, all:0 }
-};
+const ABED_DAYS = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+const ABED_DKEY = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+let __abedAbort = null;
+let __abedOffset = 0;
+let __abedData = new Map();   // email -> {days,total,weekLabel}
+let __abedChanges = new Map();// email -> { Mon:'7:30 - 3:30', ... }
+let __abedCounts  = { back:0, front:0, cash:0, driver:0, crew:0, activeAll:0, done:0 };
 
-/* ---------- Lógica de “activo ahora” y “completado” ---------- */
-function ablParseRange(shift){
+/* ---------- Helpers de estado (activo / completado) ---------- */
+function abedParseRange(shift){
   const t = String(shift||"").trim();
   if (!t || /^(-|off|n\/a)$/i.test(t)) return null;
   if (/\.$/.test(t)) return { kind:"live", start: parseTime(t.replace(/\.$/,"").trim())||null };
@@ -1461,8 +1465,8 @@ function ablParseRange(shift){
   if (!a || !b) return { kind:"other" };
   return { kind:"range", start:a, end:b };
 }
-function ablIsActiveNow(shift){
-  const info = ablParseRange(shift);
+function abedIsActiveNow(shift){
+  const info = abedParseRange(shift);
   if (!info) return false;
   if (info.kind==="live" && info.start) return Date.now() >= info.start.getTime();
   if (info.kind==="range" && info.start && info.end){
@@ -1470,168 +1474,242 @@ function ablIsActiveNow(shift){
   }
   return false;
 }
-function ablIsCompletedToday(shift){
-  const info = ablParseRange(shift);
+function abedIsDone(shift){
+  const info = abedParseRange(shift);
   if (!info) return false;
-  if (info.kind==="range" && info.end){
-    return Date.now() > info.end.getTime();
-  }
+  if (info.kind==="range" && info.end) return Date.now() > info.end.getTime();
   return false;
 }
 
-/* ---------- UI ---------- */
-function ablClose(){ try{ __ablAbort?.abort(); }catch{} __ablAbort=null; document.getElementById('ablOverlay')?.remove(); }
-
-function ablSectionHTML(key, title){
+/* ---------- UI builders ---------- */
+function abedSectionHTML(key, title){
   return `
-    <div class="abl-section" data-group="${key}">
-      <div class="abl-sec-head">
-        <span class="abl-badge ${key}">${title}</span>
-        <span class="abl-count" id="abl-count-${key}">Activos: 0</span>
+    <div class="abed-section" data-group="${key}">
+      <div class="abed-sec-head">
+        <span class="abed-badge ${key}">${title}</span>
+        <span class="abed-count" id="abed-count-${key}">Activos: 0</span>
       </div>
-      <div class="abl-grid" id="abl-grid-${key}"></div>
+      <div class="abed-grid" id="abed-grid-${key}"></div>
     </div>
   `;
 }
-function ablCardHTML(emp, today, isLive, isDone){
-  const tel = emp.phone ? `<button class="abl-call" data-tel="${emp.phone}">Call</button>` : "";
-  const liveTag = isLive ? `<span class="abl-live">• LIVE</span>` : (isDone ? `<span class="abl-done">DONE</span>` : "");
+
+function abedDayRowHTML(dkey, text){
+  const off = /^(-|off|n\/a)$/i.test(String(text||""));
   return `
-    <div class="abl-cardp" data-email="${cssEscape(emp.email)}">
-      <div class="abl-top">
-        <span class="abl-initial">${ablInit(emp.name)}</span>
+    <div class="wd" data-day="${dkey}">
+      <div class="abed-day">${dkey}</div>
+      <div class="abed-ed ${off?"off":""}" contenteditable="true">${String(text||"-")}</div>
+    </div>`;
+}
+
+function abedCardHTML(emp, schedForWeek, todayKey){
+  const map = new Map((schedForWeek.days||[]).map(d=>[String(d.name||"").slice(0,3), d]));
+  const today = map.get(String(todayKey).slice(0,3).charAt(0).toUpperCase()+String(todayKey).slice(1,3)) || null;
+  const shiftToday = String(today?.shift||"").trim();
+  const live = abedIsActiveNow(shiftToday);
+  const done = !live && abedIsDone(shiftToday);
+
+  const weekRows = ABED_DKEY.map(k=>{
+    const d = map.get(k) || {};
+    return abedDayRowHTML(k, d.shift||"-");
+  }).join("");
+
+  const telBtn = emp.phone ? `<button class="abed-call" data-tel="${emp.phone}">Call</button>` : "";
+
+  return `
+    <div class="abed-cardp" id="abed-${cssEscape(emp.email)}" data-email="${emp.email}">
+      <div class="abed-top">
+        <span class="abed-initial">${(emp.name||"?").split(/\s+/).map(p=>p[0]||"").join("").slice(0,2).toUpperCase()}</span>
         <div>
-          <div class="abl-name">${emp.name} ${liveTag}</div>
-          <div class="abl-role">${emp.role||""}</div>
+          <div class="abed-name">${emp.name} ${live?'<span class="abed-live">• LIVE</span>':(done?'<span class="abed-done">DONE</span>':'')}</div>
+          <div class="abed-role">${emp.role||""}</div>
         </div>
+        <div class="spacer"></div>
+        <div class="abed-total">Total: ${(Number(schedForWeek.total||0)).toFixed(1)}h</div>
       </div>
-      <div class="abl-shift">Today: <b>${ablFmtShift(today.shift||"-")}</b> • ${Number(today.hours||0).toFixed(1)}h</div>
-      <div class="abl-actions">
-        <button class="abl-send-today" data-act="sendtoday" data-email="${cssEscape(emp.email)}">Send Today</button>
-        <button class="abl-send-tom"   data-act="sendtomorrow" data-email="${cssEscape(emp.email)}">Send Tomorrow</button>
-        ${tel}
+
+      <div class="abed-week">
+        ${weekRows}
+      </div>
+
+      <div class="abed-presets" data-email="${emp.email}">
+        <span style="font-weight:800; color:#0a56cc;">Presets:</span>
+        <button data-preset="OFF">OFF</button>
+        <button data-preset="7:30 - 3:30">7:30 - 3:30</button>
+        <button data-preset="8 - 4">8 - 4</button>
+        <button data-preset="9 - 5">9 - 5</button>
+        <button data-preset="10 - 6">10 - 6</button>
+        <button data-preset="12 - 8">12 - 8</button>
+        <button data-preset="Start.">Start.</button>
+      </div>
+
+      <div class="abed-actions">
+        <button class="abed-save" data-email="${emp.email}">Save row</button>
+        <button class="abed-send-today" data-act="sendtoday" data-email="${emp.email}">Send Today</button>
+        <button class="abed-send-tom"   data-act="sendtomorrow" data-email="${emp.email}">Send Tomorrow</button>
+        ${telBtn}
       </div>
     </div>
   `;
 }
 
-window.openBoardLite = async function openBoardLite(){
-  ablClose();
-  const overlay = document.createElement('div'); overlay.id='ablOverlay';
+/* ---------- Abrir / Cerrar ---------- */
+window.openBoardEditor = async function openBoardEditor(offset=0){
+  __abedOffset = offset|0; __abedChanges.clear();
+  document.getElementById("abedOverlay")?.remove();
+
+  const overlay = document.createElement("div"); overlay.id="abedOverlay";
   overlay.innerHTML = `
-    <div class="abl-card">
-      <div class="abl-head">
-        <button class="abl-pill" data-nav="-1">‹ Week</button>
-        <h3>Board (lite)</h3>
+    <div class="abed-card">
+      <div class="abed-head">
+        <button class="abed-pill" data-nav="-1">‹ Week</button>
+        <h3>Board — Editor</h3>
         <div class="spacer"></div>
-        <div class="abl-date"></div>
-        <button class="abl-close">×</button>
+        <div class="abed-week-label" style="font-weight:700; color:#0a56cc;">Loading…</div>
+        <button class="abed-close">×</button>
       </div>
-      <div class="abl-sub">
-        <span class="abl-chip" id="abl-total">Activos: 0</span>
-        <span class="abl-note">Solo muestra personas <b>activas ahora</b> por grupo.</span>
+      <div class="abed-sub">
+        <span class="abed-chip" id="abed-total">Activos: 0</span>
+        <span class="abed-chip" id="abed-done">Completados: 0</span>
+        <span class="abed-note">Edita aquí → guarda con <b>Save row</b> o <b>Publish all</b>.</span>
       </div>
-      <div class="abl-body">
-        ${ablSectionHTML("back","BACK")}
-        ${ablSectionHTML("front","FRONT")}
-        ${ablSectionHTML("cash","CASHIERS")}
-        ${ablSectionHTML("driver","DRIVERS")}
-        ${ablSectionHTML("crew","CREW")}
-        <div class="abl-section" id="abl-completed">
-          <div class="abl-sec-head">
-            <span class="abl-badge crew">COMPLETED TODAY</span>
-            <span class="abl-count" id="abl-count-done">Total: 0</span>
-          </div>
-          <div class="abl-grid" id="abl-grid-done"></div>
+      <div class="abed-body">
+        ${abedSectionHTML("back","BACK")}
+        ${abedSectionHTML("front","FRONT")}
+        ${abedSectionHTML("cash","CASHIERS")}
+        ${abedSectionHTML("driver","DRIVERS")}
+        ${abedSectionHTML("crew","CREW")}
+      </div>
+      <div class="abed-foot">
+        <div class="totals" id="abed-totals-foot">Activos: 0</div>
+        <div>
+          <button class="abed-pill" id="abed-publish">Publish all</button>
+          <button class="abed-close">Close</button>
         </div>
       </div>
-      <div class="abl-foot">
-        <div class="totals" id="abl-totals-foot">Activos: 0</div>
-        <div class="abl-note">Tip: Los botones “Send” usan las mismas rutas que A3/B3 del Script.</div>
-      </div>
-    </div>
-  `;
+    </div>`;
   document.body.appendChild(overlay);
-  overlay.addEventListener('click', (e)=>{ if (e.target===overlay) ablClose(); });
-  overlay.querySelector('.abl-close').onclick = ablClose;
-  overlay.querySelector('[data-nav="-1"]').onclick = ()=> toast?.("Use Weekly si quieres semana -1","info");
 
-  // Fecha bonita
-  const dd = new Date().toLocaleDateString("en-US",{weekday:"long", month:"short", day:"numeric"});
-  overlay.querySelector('.abl-date').textContent = dd;
+  overlay.addEventListener("click", (e)=>{ if(e.target===overlay) abedClose(); });
+  overlay.querySelectorAll(".abed-close").forEach(b=> b.onclick = abedClose);
+  overlay.querySelector('[data-nav="-1"]').onclick = ()=> openBoardEditor(__abedOffset+1);
 
-  // Carga datos
-  await ablLoadAndRender(overlay);
+  await abedLoadAndRender(overlay);
 
-  // Binds: enviar y llamar
+  // Delegación de eventos
   overlay.addEventListener('click', async (ev)=>{
     const btn = ev.target.closest('button'); if (!btn) return;
+
+    if (btn.id === 'abed-publish') return abedPublishAll();
+
     if (btn.dataset.act && btn.dataset.email){
+      // Enviar mensajería
       sendShiftMessage(btn.dataset.email, btn.dataset.act);
-    } else if (btn.dataset.tel){
-      location.href = `tel:${btn.dataset.tel}`;
+      return;
+    }
+    if (btn.dataset.tel){ location.href = `tel:${btn.dataset.tel}`; return; }
+
+    if (btn.classList.contains('abed-save') && btn.dataset.email){
+      abedSaveRow(btn.dataset.email);
+      return;
+    }
+
+    // Presets
+    const presetsWrap = btn.parentElement;
+    if (presetsWrap && presetsWrap.classList.contains('abed-presets') && btn.dataset.preset){
+      const email = presetsWrap.dataset.email;
+      const card  = document.getElementById(`abed-${cssEscape(email)}`);
+      if (!card) return;
+      const val = btn.dataset.preset==='OFF' ? 'OFF' : btn.dataset.preset;
+      card.querySelectorAll('.abed-week .wd .abed-ed').forEach(ed=>{
+        ed.textContent = val;
+        ed.classList.toggle('off', /^(-|off|n\/a)$/i.test(val));
+        abedMarkChanged(email, ed.closest('.wd'));
+      });
     }
   });
 
-  // Actualiza cada 2 min (solo estados)
-  overlay.__ablTimer && clearInterval(overlay.__ablTimer);
-  overlay.__ablTimer = setInterval(()=> ablRefreshStates(overlay), 120000);
+  // Inputs: marcar cambios y limpiar espacios
+  overlay.addEventListener('input', (e)=>{
+    const ed = e.target.closest('.abed-ed'); if (!ed) return;
+    const wd = ed.closest('.wd'); const card = ed.closest('.abed-cardp');
+    ed.classList.add('changed');
+    ed.classList.toggle('off', /^(-|off|n\/a)$/i.test(ed.textContent.trim()));
+    abedMarkChanged(card.dataset.email, wd);
+  });
+  overlay.addEventListener('blur', (e)=>{
+    const ed = e.target.closest('.abed-ed'); if (!ed) return;
+    ed.textContent = ed.textContent.replace(/\s+/g,' ').trim();
+  }, true);
+
+  // Refresco de estados live/done cada 2 min
+  overlay.__abedTimer && clearInterval(overlay.__abedTimer);
+  overlay.__abedTimer = setInterval(()=> abedRefreshStates(overlay), 120000);
 };
 
-async function ablLoadAndRender(root){
-  try{
-    __ablAbort?.abort(); __ablAbort = new AbortController();
+function abedClose(){
+  try{ __abedAbort?.abort(); }catch{} __abedAbort=null;
+  document.getElementById("abedOverlay")?.remove();
+}
 
-    const dir = await API.getDirectory(__ablAbort);
+/* ---------- Carga y pintado ---------- */
+async function abedLoadAndRender(root){
+  try{
+    __abedAbort?.abort(); __abedAbort = new AbortController();
+
+    const dir = await API.getDirectory(__abedAbort);
     const list = (dir?.directory||[]).slice().sort(bySheetOrder);
 
-    // Reset acumuladores
-    __ablData = {
-      byGroup: { back:[], front:[], cash:[], driver:[], crew:[] },
-      completed: [],
-      totals: { back:0, front:0, cash:0, driver:0, crew:0, all:0 }
-    };
+    __abedData.clear();
+    __abedChanges.clear();
+    __abedCounts = { back:0, front:0, cash:0, driver:0, crew:0, activeAll:0, done:0 };
 
     const todayKey = Today.key;
 
-    await runLimited(list, 4, async (emp)=>{
-      let sched = null;
-      try{ sched = await API.getSchedule(emp.email, 0, __ablAbort); }catch{}
-      if (!sched?.ok) return;
-
-      const d = (sched.days||[]).find(x=> x.name.slice(0,3).toLowerCase()===todayKey) || {};
-      const shift = String(d.shift||"").trim();
-      if (!shift || /^(-|off|n\/a)$/i.test(shift)) return;
-
-      const g = ablGroupOf(emp);
-      const isLive = ablIsActiveNow(shift);
-      const isDone = !isLive && ablIsCompletedToday(shift);
-
-      if (isLive){
-        __ablData.byGroup[g].push({ emp, d });
-        __ablData.totals[g]++; __ablData.totals.all++;
-      } else if (isDone){
-        __ablData.completed.push({ emp, d, g });
-      }
-    });
-
-    // Pintar grupos activos
+    // Primero pintamos skeleton vacío por grupos
     for (const key of ["back","front","cash","driver","crew"]){
-      const grid = root.querySelector(`#abl-grid-${key}`), counter = root.querySelector(`#abl-count-${key}`);
-      const arr = __ablData.byGroup[key];
-      grid.innerHTML = arr.map(x=> ablCardHTML(x.emp, x.d, /*live*/true, /*done*/false)).join("") || `<div style="opacity:.6">— No active</div>`;
-      counter.textContent = `Activos: ${__ablData.totals[key]||0}`;
+      const grid = root.querySelector(`#abed-grid-${key}`);
+      grid.innerHTML = `<div style="opacity:.6">Loading…</div>`;
+      root.querySelector(`#abed-count-${key}`).textContent = `Activos: 0`;
     }
 
-    // Pintar completados
-    const doneGrid = root.querySelector('#abl-grid-done'), doneCount=root.querySelector('#abl-count-done');
-    doneGrid.innerHTML = __ablData.completed.map(x=> ablCardHTML(x.emp, x.d, /*live*/false, /*done*/true)).join("") || `<div style="opacity:.6">— Vacío</div>`;
-    doneCount.textContent = `Total: ${__ablData.completed.length}`;
+    // Cargar schedules con límite
+    await runLimited(list, 4, async (emp)=>{
+      let sched = null;
+      try{ sched = await API.getSchedule(emp.email, __abedOffset, __abedAbort); }catch{}
+      if (!sched?.ok) return;
 
-    // Totales
-    const tot = __ablData.totals.all||0;
-    root.querySelector('#abl-total').textContent = `Activos: ${tot}`;
-    root.querySelector('#abl-totals-foot').textContent = `Activos: ${tot}`;
+      __abedData.set(emp.email, sched);
+
+      const group = ablGroupOf(emp);
+      const grid  = root.querySelector(`#abed-grid-${group}`);
+      if (!grid) return;
+
+      // Inserta la tarjeta
+      const html = abedCardHTML(emp, sched, todayKey);
+      if (/Loading…/.test(grid.innerHTML)) grid.innerHTML = html; else grid.insertAdjacentHTML('beforeend', html);
+
+      // Contadores activo/done por grupo
+      const today = (sched.days||[]).find(x=> x.name.slice(0,3).toLowerCase()===todayKey);
+      const s = String(today?.shift||"").trim();
+      if (abedIsActiveNow(s)){ __abedCounts[group]++; __abedCounts.activeAll++; }
+      else if (abedIsDone(s)){ __abedCounts.done++; }
+
+      root.querySelector(`#abed-count-${group}`).textContent = `Activos: ${__abedCounts[group]}`;
+      root.querySelector('#abed-total').textContent = `Activos: ${__abedCounts.activeAll}`;
+      root.querySelector('#abed-done').textContent  = `Completados: ${__abedCounts.done}`;
+      root.querySelector('#abed-totals-foot').textContent = `Activos: ${__abedCounts.activeAll}`;
+    });
+
+    // Etiqueta de semana
+    const any = __abedData.values().next().value;
+    if (any?.weekLabel){
+      root.querySelector(".abed-week-label").textContent =
+        `${any.weekLabel} ${__abedOffset ? `(Week ${-__abedOffset})` : '(current)'}`;
+    } else {
+      root.querySelector(".abed-week-label").textContent = __abedOffset ? `Week ${-__abedOffset}` : 'Current week';
+    }
 
   }catch(e){
     console.warn(e);
@@ -1639,74 +1717,140 @@ async function ablLoadAndRender(root){
   }
 }
 
-async function ablRefreshStates(root){
+/* ---------- Cambios y guardado ---------- */
+function abedMarkChanged(email, wdEl){
+  const day = wdEl?.dataset?.day; if (!day) return;
+  const val = wdEl.querySelector('.abed-ed')?.textContent?.trim() || '';
+  let bag = __abedChanges.get(email); if (!bag){ bag = {}; __abedChanges.set(email, bag); }
+  bag[day] = val;
+  wdEl.querySelector('.abed-ed')?.classList.add('changed');
+}
+
+async function abedSaveRow(email){
+  const card = document.getElementById(`abed-${cssEscape(email)}`);
+  const bag = __abedChanges.get(email);
+  if (!bag || !Object.keys(bag).length){ toast?.("ℹ️ No changes in this card","info"); return; }
+
+  const btn = card?.querySelector('.abed-save');
+  if (btn){ btn.disabled = true; btn.textContent = "Saving…"; }
+
   try{
-    // Solo recalcular “live/done” en base a shifts ya cargados (barato)
-    const recalc = (shift)=>({ live: ablIsActiveNow(shift), done: ablIsCompletedToday(shift) });
+    const actor = (window.currentUser?.email)||"";
+    let ok=0, total = Object.keys(bag).length;
 
-    // Recalcula agrupados
-    let allLive = 0;
-    for (const key of ["back","front","cash","driver","crew"]){
-      const grid = root.querySelector(`#abl-grid-${key}`);
-      const arr = __ablData.byGroup[key];
-      let html = "";
-      let liveCount = 0;
-      for (const x of arr){
-        const state = recalc(String(x.d.shift||""));
-        if (state.live){ liveCount++; html += ablCardHTML(x.emp, x.d, true, false); }
-      }
-      grid.innerHTML = html || `<div style="opacity:.6">— No active</div>`;
-      root.querySelector(`#abl-count-${key}`).textContent = `Activos: ${liveCount}`;
-      __ablData.totals[key] = liveCount; allLive += liveCount;
+    for (const [day, shift] of Object.entries(bag)){
+      const u = `${CONFIG.BASE_URL}?action=updateShift&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(email)}&day=${encodeURIComponent(day)}&shift=${encodeURIComponent(shift)}`;
+      try{
+        const r = await fetch(u, {cache:"no-store"}); const j = await r.json();
+        if (j?.ok) ok++;
+      }catch{}
     }
-    root.querySelector('#abl-total').textContent = `Activos: ${allLive}`;
-    root.querySelector('#abl-totals-foot').textContent = `Activos: ${allLive}`;
+    if (ok===total){ toast?.("✅ Row saved","success"); __abedChanges.delete(email); }
+    else if (ok>0){ toast?.("⚠️ Partial save","error"); }
+    else { toast?.("❌ Save failed","error"); }
 
-    // Recalcula completados (si alguno dejó de estar activo y ya terminó)
-    const newDone = [];
-    for (const key of ["back","front","cash","driver","crew"]){
-      for (const x of __ablData.byGroup[key]){
-        const st = recalc(String(x.d.shift||""));
-        if (!st.live && st.done) newDone.push({ emp:x.emp, d:x.d, g:key });
+    // Refresca datos y tarjeta
+    const d = await API.getSchedule(email, __abedOffset);
+    if (d?.ok){
+      __abedData.set(email, d);
+      const todayKey = Today.key;
+      const emp = { name: card.querySelector('.abed-name')?.textContent?.replace(/(• LIVE|DONE)/g,'').trim()||"", email };
+      const group = card.closest('.abed-section')?.dataset?.group || 'crew';
+      const newHTML = abedCardHTML(emp, d, todayKey);
+      card.outerHTML = newHTML; // reemplaza tarjeta
+    }
+  }catch(e){ console.warn(e); toast?.("❌ Save error","error"); }
+  finally{ if (btn){ btn.disabled=false; btn.textContent="Save row"; } }
+}
+
+async function abedPublishAll(){
+  if (__abedChanges.size===0){ toast?.("ℹ️ Nothing to publish","info"); return; }
+  const btn = document.getElementById('abed-publish');
+  if (btn){ btn.disabled = true; btn.textContent = "Publishing…"; }
+
+  try{
+    const entries = [...__abedChanges.entries()];
+    await runLimited(entries, 2, async ([email, bag])=>{
+      const actor = (window.currentUser?.email)||"";
+      for (const [day, shift] of Object.entries(bag)){
+        const u = `${CONFIG.BASE_URL}?action=updateShift&actor=${encodeURIComponent(actor)}&target=${encodeURIComponent(email)}&day=${encodeURIComponent(day)}&shift=${encodeURIComponent(shift)}`;
+        try{ await fetch(u, {cache:"no-store"}).then(r=>r.json()); }catch{}
       }
+      const d = await API.getSchedule(email, __abedOffset);
+      if (d?.ok){
+        __abedData.set(email, d);
+        const card = document.getElementById(`abed-${cssEscape(email)}`);
+        if (card){
+          const todayKey = Today.key;
+          const emp = { name: card.querySelector('.abed-name')?.textContent?.replace(/(• LIVE|DONE)/g,'').trim()||"", email };
+          card.outerHTML = abedCardHTML(emp, d, todayKey);
+        }
+      }
+    });
+    __abedChanges.clear();
+    toast?.("✅ Published all","success");
+  }catch(e){ console.warn(e); toast?.("❌ Publish failed","error"); }
+  finally{ if (btn){ btn.disabled=false; btn.textContent = "Publish all"; } }
+}
+
+/* ---------- Refresco de estados (live/done) ---------- */
+async function abedRefreshStates(root){
+  try{
+    const todayKey = Today.key;
+    let totalActive = 0, totalDone = 0;
+    const byGroup = { back:0, front:0, cash:0, driver:0, crew:0 };
+
+    const cards = Array.from(root.querySelectorAll('.abed-cardp'));
+    for (const card of cards){
+      const email = card.dataset.email;
+      const sched = __abedData.get(email); if (!sched) continue;
+      const today = (sched.days||[]).find(x=> x.name.slice(0,3).toLowerCase()===todayKey);
+      const shift = String(today?.shift||"").trim();
+      const live = abedIsActiveNow(shift);
+      const done = !live && abedIsDone(shift);
+
+      const nameEl = card.querySelector('.abed-name');
+      nameEl.innerHTML = nameEl.textContent.replace(/(• LIVE|DONE)/g,'').trim() + (live?' <span class="abed-live">• LIVE</span>':(done?' <span class="abed-done">DONE</span>':''));
+
+      const g = card.closest('.abed-section')?.dataset?.group || 'crew';
+      if (live){ byGroup[g]++; totalActive++; }
+      else if (done){ totalDone++; }
     }
-    if (newDone.length){
-      __ablData.completed = newDone; // refresca
-      const doneGrid = root.querySelector('#abl-grid-done');
-      const doneCount = root.querySelector('#abl-count-done');
-      doneGrid.innerHTML = newDone.map(x=> ablCardHTML(x.emp, x.d, false, true)).join("");
-      doneCount.textContent = `Total: ${newDone.length}`;
+
+    for (const k of Object.keys(byGroup)){
+      const el = root.querySelector(`#abed-count-${k}`); if (el) el.textContent = `Activos: ${byGroup[k]}`;
     }
+    root.querySelector('#abed-total').textContent = `Activos: ${totalActive}`;
+    root.querySelector('#abed-done').textContent  = `Completados: ${totalDone}`;
+    root.querySelector('#abed-totals-foot').textContent = `Activos: ${totalActive}`;
   }catch(e){ console.warn(e); }
 }
 
-/* ---------- Botón flotante y hook al Welcome ---------- */
-window.addBoardButton = function addBoardButton(){
-  if (document.getElementById("boardLiteBtn")) return;
+/* ---------- Botón flotante y enganche al Welcome ---------- */
+window.addBoardEditorButton = function addBoardEditorButton(){
+  if (document.getElementById("boardEditorBtn")) return;
   const b = document.createElement("button");
-  b.id = "boardLiteBtn";
-  b.textContent = "Board (lite)";
+  b.id = "boardEditorBtn";
+  b.textContent = "Board (editor)";
   Object.assign(b.style, {
     position:"fixed", top:"12px", right:"228px", zIndex: 9999,
     padding:"8px 12px", borderRadius:"12px", border:"0",
-    background:"#e60000", color:"#fff", fontWeight:"800",
-    boxShadow:"0 6px 16px rgba(230,0,0,.35)", cursor:"pointer"
+    background:"#0a56cc", color:"#fff", fontWeight:"800",
+    boxShadow:"0 6px 16px rgba(10,86,204,.35)", cursor:"pointer"
   });
-  b.onclick = ()=> openBoardLite();
+  b.onclick = ()=> openBoardEditor(0);
   document.body.appendChild(b);
 };
 
-// Enganche automático al Welcome (no necesitas tocar tu showWelcome)
-(function hookWelcomeForBoard(){
+(function hookWelcomeForBoardEditor(){
   const prev = window.showWelcome;
   if (typeof prev === "function"){
     window.showWelcome = async function(name, role){
       const r = await prev.apply(this, arguments);
-      if (isManagerRole(role)) window.addBoardButton?.();
+      if (isManagerRole(role)) window.addBoardEditorButton?.();
       return r;
     };
   } else {
-    // Fallback: si ya hay currentUser, intenta inyectar tras load
-    setTimeout(()=>{ if (isManagerRole(window.currentUser?.role)) window.addBoardButton?.(); }, 800);
+    setTimeout(()=>{ if (isManagerRole(window.currentUser?.role)) window.addBoardEditorButton?.(); }, 800);
   }
 })();

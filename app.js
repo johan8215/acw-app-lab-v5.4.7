@@ -2237,3 +2237,44 @@ function doGet(e){
   return ContentService.createTextOutput('{"ok":false,"error":"no_action"}')
     .setMimeType(ContentService.MimeType.JSON);
 }
+
+/* === HOTFIX — Normalizar emails + TeamView seguro (Nov 2025) === */
+(function(){
+  const canonEmail = e => String(e||"").trim().toLowerCase();
+
+  // 1) API.getSchedule: no consultes si no hay email; normaliza.
+  const _getSchedule = API.getSchedule;
+  API.getSchedule = function(email, offset=0, controller){
+    const e = canonEmail(email);
+    if (!e) return Promise.resolve({ ok:false, days:[], total:0, _err:"missing_email" });
+    return _getSchedule.call(API, e, offset, controller);
+  };
+
+  // 2) Team View: deshabilitar filas sin email y evitar "activos" falsos.
+  const _renderTV = window.renderTeamViewPage;
+  window.renderTeamViewPage = function(...args){
+    _renderTV.apply(this, args);
+    const box = document.getElementById("directoryWrapper");
+    if (!box) return;
+    box.querySelectorAll(".tv-table tr[data-email]").forEach(tr=>{
+      const e = canonEmail(tr.dataset.email);
+      if (!e){
+        tr.dataset.email = "";                           // explícito
+        const h = tr.querySelector(".tv-hours"); if (h) h.textContent = "—";
+        const l = tr.querySelector(".tv-live");  if (l) l.textContent = "—";
+        const btn = tr.querySelector(".open-btn"); if (btn){ btn.disabled = true; btn.title = "No email in directory"; }
+      }else{
+        tr.dataset.email = e; // normalizado
+      }
+    });
+  };
+
+  // 3) Modal de empleado: bloquear apertura si no hay email.
+  const _openEmp = window.openEmployeePanel;
+  window.openEmployeePanel = function(btn){
+    const tr = btn?.closest("tr");
+    const e = canonEmail(tr?.dataset.email);
+    if (!e){ toast && toast("⚠️ Este empleado no tiene email en el directorio.", "error"); return; }
+    return _openEmp.call(this, btn);
+  };
+})();

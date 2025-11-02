@@ -132,6 +132,7 @@ async function loginUser() {
 
     currentUser = data; // {ok,name,email,role,week}
     localStorage.setItem("acwUser", JSON.stringify(data));
+    window.currentUser = currentUser;   // <—
 
     safeText(diag, "✅ Welcome, " + data.name + "!");
     await showWelcome(data.name, data.role);
@@ -205,6 +206,7 @@ window.addEventListener("load", () => {
     const saved = localStorage.getItem("acwUser");
     if (saved) {
       currentUser = JSON.parse(saved);
+      window.currentUser = currentUser;   // <—
       showWelcome(currentUser.name, currentUser.role);
       loadSchedule(currentUser.email);
     }

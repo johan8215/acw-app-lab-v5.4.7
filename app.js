@@ -1686,3 +1686,25 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
     }
   }catch(e){}
 })();
+// ▶ Botón flotante para ejecutar diagnóstico
+(function(){
+  if (document.getElementById("acwDiagBtn") || !window.ACW_TEST) return;
+  const b = document.createElement("button");
+  b.id="acwDiagBtn";
+  b.textContent="Run DIAG";
+  Object.assign(b.style,{
+    position:"fixed", right:"14px", bottom:"14px", zIndex:12000,
+    padding:"10px 14px", border:"0", borderRadius:"10px",
+    fontWeight:"700", cursor:"pointer",
+    background:"#e60000", color:"#fff", boxShadow:"0 8px 18px rgba(230,0,0,.32)"
+  });
+  b.onclick = async ()=>{
+    const saved = localStorage.getItem("acwDiagEmail") || (window.currentUser?.email || "");
+    const email = saved || prompt("ACW email:");
+    const password = prompt("Password:");
+    if (!email || !password) return;
+    localStorage.setItem("acwDiagEmail", email);
+    await ACW_TEST.run({ email, password });
+  };
+  document.addEventListener("DOMContentLoaded", ()=> document.body.appendChild(b));
+})();

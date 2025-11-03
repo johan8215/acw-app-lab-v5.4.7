@@ -521,7 +521,12 @@ const tr = Array.from(body.querySelectorAll('tr[data-email]'))
     }));
     // actualiza live del slice usando caché de 60s
     await runLimited(sliceNow, 4, async (info)=>{
-      const d = await API.getSchedule(info.email, 0, __tvController);
+      let d = await API.getSchedule(info.email, 0, __tvController);
+// Fallback: reintento SIN offset si viene vacío
+if (!d || !Array.isArray(d.days) || d.days.length === 0) {
+  const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(info.email)}`;
+  d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
+}
       const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===Today.key);
       const liveCell = info.rowEl.querySelector(".tv-live");
       const totalCell= info.rowEl.querySelector(".tv-hours");

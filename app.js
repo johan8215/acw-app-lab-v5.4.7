@@ -114,6 +114,71 @@ function runLimited(items, limit, iteratee){
     next();
   });
 }
+/* =============== Directory loader (local + GAS) =============== */
+function normEmp(r){
+  return {
+    name:  String(r?.name  || "").trim(),
+    email: String(r?.email || "").trim(),
+    role:  String(r?.role  || "").trim(),
+    phone: String(r?.phone || "").trim(),
+    status:String(r?.status|| "").trim()
+  };
+}
+
+async function loadLocalDirectory(signal){
+  try{
+    const res = await fetch(CONFIG.DIR_URL, { cache:"no-store", signal });
+    if (!res.ok) throw 0;
+    const data = await res.json();
+    const list = Array.isArray(data) ? data : (Array.isArray(data.directory) ? data.directory : []);
+    return list.map(normEmp);
+  }catch{ return []; }
+}
+
+async function loadGasDirectory(signal){
+  try{
+    const u = `${CONFIG.BASE_URL}?action=getEmployeesDirectory`;
+    const j = await fetchJSON(u, { ttl: CONFIG.DIR_TTL_MS || 300000, signal });
+    if (j?.ok && Array.isArray(j.directory)) return j.directory.map(normEmp);
+  }catch{}
+  return [];
+}
+
+function mergeDirectory(local, remote){
+  const byEmail = new Map();
+  const put = (rec, src)=>{
+    const k = (rec.email || "").toLowerCase().trim();
+    if (!k) return;                            // sin email → se ignora
+    if (!byEmail.has(k) || src==="local"){     // local manda
+      byEmail.set(k, { ...byEmail.get(k), ...rec });
+    }
+  };
+  local.forEach(r=>put(r,"local"));
+  remote.forEach(r=>put(r,"remote"));
+  return Array.from(byEmail.values());
+}
+
+/* =============== API helpers con TTL ========================== */
+const API = {
+  dirTTL:     CONFIG.DIR_TTL_MS || 5*60*1000,
+  schedTTL0:  60*1000,
+  schedTTLOld:5*60*1000,
+
+  async getDirectory(controller){
+    const local  = await loadLocalDirectory(controller?.signal);
+    if (CONFIG.DIR_STRICT_LOCAL) return { ok:true, directory: local };
+
+    const remote = await loadGasDirectory(controller?.signal);
+    const merged = mergeDirectory(local, remote);
+    return { ok:true, directory: merged };
+  },
+
+  async getSchedule(email, offset=0, controller){
+    const ttl = offset===0 ? API.schedTTL0 : API.schedTTLOld;
+    const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}&offset=${offset}`;
+    return fetchJSON(u, { ttl, signal: controller?.signal });
+  }
+};
 
 /* =================== LOGIN =================== */
 async function loginUser() {

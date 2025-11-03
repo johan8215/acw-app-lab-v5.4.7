@@ -376,6 +376,226 @@ async function loadEmployeeDirectory() {
   }
 }
 
+/* ============================================================
+   📇 DirectoryStore v1.1 — Local cache + Import/Export + Registro
+   ============================================================ */
+const DirectoryStore = (() => {
+  const KEY = `acw.directory.${CONFIG.DIR_VERSION || "v1"}`;
+
+  function _read() {
+    try {
+      const raw = localStorage.getItem(KEY);
+      if (!raw) return null;
+      const obj = JSON.parse(raw);
+      if (!obj?.directory || !Array.isArray(obj.directory)) return null;
+      return obj;
+    } catch { return null; }
+  }
+  function _write(payload){
+    localStorage.setItem(KEY, JSON.stringify({
+      version : CONFIG.DIR_VERSION,
+      updated : new Date().toISOString(),
+      source  : payload?.source || "local",
+      directory: dedupeByEmail(payload?.directory || [])
+    }));
+  }
+  function dedupeByEmail(list){
+    const seen = new Map();
+    (list||[]).forEach(e=>{
+      const email = String(e.email||"").trim().toLowerCase();
+      if(!email) return;
+      // último gana (para poder actualizar)
+      seen.set(email, {
+        name:  e.name?.trim() || "",
+        email,
+        phone: (e.phone||"").trim(),
+        role:  (e.role||"employee").trim()
+      });
+    });
+    return Array.from(seen.values());
+  }
+  function getAll(){
+    const obj = _read();
+    return obj?.directory || [];
+  }
+  function setAll(list, source="local"){ _write({ directory:list, source }); }
+  function clear(){ localStorage.removeItem(KEY); }
+
+  function importJSON(text){
+    let data = null;
+    try{ data = JSON.parse(text); }catch(e){ throw new Error("JSON inválido"); }
+    const dir = Array.isArray(data) ? data : (data?.directory || []);
+    if (!Array.isArray(dir)) throw new Error("Estructura inválida");
+    const cleaned = dedupeByEmail(dir);
+    _write({ directory: cleaned, source:"import-json" });
+    return cleaned.length;
+  }
+  function importCSV(text){
+    // columnas esperadas: name,email,phone,role (headers flexibles)
+    const lines = String(text||"").split(/\r?\n/).filter(Boolean);
+    if (!lines.length) return 0;
+    const header = lines.shift().split(",").map(s=>s.trim().toLowerCase());
+    const idx = {
+      name : header.findIndex(h => /name|nombre/.test(h)),
+      email: header.findIndex(h => /email|correo/.test(h)),
+      phone: header.findIndex(h => /phone|telefono|tel/.test(h)),
+      role : header.findIndex(h => /role|rol/.test(h))
+    };
+    const rows = lines.map(l=>{
+      // CSV simple (sin comillas complejas); si usas comillas, reemplaza por un parser más pro
+      const parts = l.split(",").map(s=>s.trim());
+      return {
+        name:  idx.name  >=0 ? parts[idx.name]  : "",
+        email: idx.email >=0 ? parts[idx.email] : "",
+        phone: idx.phone >=0 ? parts[idx.phone] : "",
+        role:  idx.role  >=0 ? parts[idx.role]  : "employee"
+      };
+    });
+    const merged = dedupeByEmail([ ...getAll(), ...rows ]);
+    _write({ directory: merged, source: "import-csv" });
+    return merged.length;
+  }
+  function exportJSON(){
+    const payload = _read() || { version: CONFIG.DIR_VERSION, directory: [] };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:"application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = "directory.json";
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 500);
+  }
+
+  function upsertEmployee({name,email,phone,role}){
+    const list = getAll();
+    const norm = {
+      name : String(name||"").trim(),
+      email: String(email||"").trim().toLowerCase(),
+      phone: String(phone||"").trim(),
+      role : String(role||"employee").trim()
+    };
+    if (!norm.email) throw new Error("Email requerido");
+    const ix = list.findIndex(x => x.email === norm.email);
+    if (ix >= 0) list[ix] = { ...list[ix], ...norm };
+    else list.push(norm);
+    _write({ directory:list, source:"self-reg" });
+    return norm;
+  }
+
+  // público
+  return { getAll, setAll, clear, importJSON, importCSV, exportJSON, upsertEmployee };
+})();
+
+/* === Override de API.getDirectory: remoto → fallback local; o solo local si flag === */
+API.getDirectory = async function(controller){
+  // 1) Solo local si así lo pide config
+  if (CONFIG.USE_LOCAL_DIRECTORY) {
+    const dir = DirectoryStore.getAll();
+    return { ok:true, directory: dir, source:"local-only" };
+  }
+
+  // 2) Intenta remoto (como antes)
+  try{
+    const u = `${CONFIG.BASE_URL}?action=getEmployeesDirectory`;
+    const data = await fetchJSON(u, { ttl: API.dirTTL, signal: controller?.signal });
+    if (data?.ok && Array.isArray(data.directory) && data.directory.length){
+      // guarda copia local para offline
+      DirectoryStore.setAll(data.directory, "remote-sync");
+      return { ...data, source:"remote" };
+    }
+    // si remoto no trae nada, usa local
+  }catch(e){ /* cae a local */ }
+
+  // 3) Fallback local
+  const local = DirectoryStore.getAll();
+  return { ok:true, directory: local, source:"local-fallback" };
+};
+
+/* === Integración suave con showWelcome (teléfono del usuario) === */
+(async function patchWelcomePhone(){
+  const _showWelcome = window.showWelcome;
+  window.showWelcome = async function(name, role){
+    await _showWelcome(name, role);
+    try {
+      const dir = DirectoryStore.getAll();
+      const self = dir.find(e => (e.email||"").toLowerCase() === (currentUser?.email||"").toLowerCase());
+      if (self?.phone) {
+        $(".user-phone")?.remove();
+        $("#welcomeName")?.insertAdjacentHTML("afterend",
+          `<p class="user-phone">📞 <a href="tel:${self.phone}" style="color:#0078ff;font-weight:600;text-decoration:none;">${self.phone}</a></p>`
+        );
+      } else if (CONFIG.ALLOW_SELF_REGISTRATION) {
+        // si NO tiene phone, ofrece registro rápido
+        ensureRegModal(); openRegModalPrefill(currentUser?.name, currentUser?.email);
+      }
+    } catch {}
+  };
+})();
+
+/* === UI: Import/Export/Registro (bindings globales) === */
+function ensureRegModal(){
+  if (document.getElementById("regModal")) return;
+  const modal = document.createElement("div");
+  modal.id = "regModal"; modal.className = "modal";
+  modal.innerHTML = `
+    <div class="modal-content glass" style="max-width:360px;">
+      <span class="close" onclick="closeRegModal()">×</span>
+      <h3 style="margin:0 0 10px;">Add / Update Employee</h3>
+      <input id="regName"  placeholder="Full name">
+      <input id="regEmail" placeholder="Email">
+      <input id="regPhone" placeholder="Phone">
+      <select id="regRole" style="display:block; margin:8px auto; width:90%; max-width:280px; padding:10px; border:1px solid rgba(0,120,255,.25); border-radius:6px;">
+        <option value="employee">Employee</option>
+        <option value="supervisor">Supervisor</option>
+        <option value="manager">Manager</option>
+      </select>
+      <p id="regDiag" class="error"></p>
+      <div style="display:flex; gap:8px; justify-content:center; margin-top:8px;">
+        <button onclick="submitSelfReg()">Save</button>
+        <button onclick="closeRegModal()" type="button">Cancel</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+}
+function openRegModal(){ ensureRegModal(); $("#regModal").style.display = "flex"; }
+function openRegModalPrefill(name,email){ openRegModal(); $("#regName").value=name||""; $("#regEmail").value=email||""; }
+function closeRegModal(){ $("#regModal")?.classList?.remove("show"); $("#regModal").style.display="none"; }
+async function submitSelfReg(){
+  const name  = $("#regName")?.value||"";
+  const email = $("#regEmail")?.value||"";
+  const phone = $("#regPhone")?.value||"";
+  const role  = $("#regRole")?.value||"employee";
+  const diag  = $("#regDiag");
+  try{
+    DirectoryStore.upsertEmployee({name,email,phone,role});
+    diag.textContent = "✅ Saved locally";
+    toast("✅ Employee saved (local)","success");
+    setTimeout(closeRegModal, 700);
+  }catch(e){
+    diag.textContent = "⚠️ " + (e.message||"Error");
+  }
+}
+
+/* === Import/Export handlers (file input) === */
+async function handleImportDirectoryFile(file){
+  if (!file) return;
+  const text = await file.text();
+  let count = 0;
+  try{
+    if (file.name.toLowerCase().endsWith(".csv")) count = DirectoryStore.importCSV(text);
+    else count = DirectoryStore.importJSON(text);
+    toast(`✅ Directory imported (${count} records)`, "success");
+  }catch(e){ toast(`❌ Import failed: ${e.message||e}`, "error"); }
+}
+window.triggerImportDirectory = ()=> $("#dirImportInput")?.click();
+window.onImportDirectoryFile = (el)=> handleImportDirectoryFile(el.files?.[0]);
+window.exportDirectoryJSON = ()=> DirectoryStore.exportJSON();
+window.clearLocalDirectory = ()=> { DirectoryStore.clear(); toast("🗑️ Local directory cleared","info"); };
+
+/* === Exponer registro a Settings === */
+window.openRegModal = openRegModal;
+window.submitSelfReg = submitSelfReg;
+window.closeRegModal = closeRegModal;
+
 function renderTeamViewPage() {
   $("#directoryWrapper")?.remove();
 

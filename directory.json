@@ -1,9 +1,0 @@
-{
-  "version": "acw-dir-2025-11-03",
-  "updated": "2025-11-03T20:35:00Z",
-  "directory": [
-    { "name": "E. REYES",       "email": "e.reyes@acw.com",     "role": "employee", "phone": "+1 617 555 0101" },
-    { "name": "M. QUINTANILLA", "email": "m.quinta@acw.com",    "role": "employee", "phone": "+1 617 555 0102" },
-    { "name": "HE. GONZALES",   "email": "he.gonzales@acw.com", "role": "employee", "phone": "+1 617 555 0103" }
-  ]
-}

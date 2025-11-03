@@ -461,4 +461,19 @@ window.syncToGoogle = syncToGoogle;
   });
 })();
 </script>
+// --- mini toast para avisos ---
+(function ensureToast(){
+  if (document.getElementById("toastContainer")) return;
+  const c=document.createElement("div"); c.id="toastContainer";
+  Object.assign(c.style,{position:"fixed",top:"16px",right:"16px",zIndex:9999,display:"flex",flexDirection:"column",gap:"8px"});
+  document.body.appendChild(c);
+})();
+function toast(msg,type="info"){
+  const t=document.createElement("div"); t.textContent=msg;
+  t.style.cssText="padding:10px 14px;border-radius:8px;color:#fff;font-weight:700;box-shadow:0 6px 14px rgba(0,0,0,.25);opacity:0;transform:translateY(-8px);transition:.3s";
+  t.style.background = type==="success" ? "#00a84f" : type==="error" ? "#e60000" : "#0078ff";
+  document.getElementById("toastContainer").appendChild(t);
+  requestAnimationFrame(()=>{ t.style.opacity="1"; t.style.transform="translateY(0)"; });
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(-8px)"; setTimeout(()=>t.remove(),250); }, 2300);
+}
 

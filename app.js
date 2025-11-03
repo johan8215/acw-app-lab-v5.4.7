@@ -475,11 +475,23 @@ function renderTeamViewPage() {
   $("#tvPrev", box).onclick = () => { __teamPage = Math.max(0, __teamPage - 1); renderTeamViewPage(); };
   $("#tvNext", box).onclick = () => { __teamPage = Math.min(Math.ceil(__teamList.length / TEAM_PAGE_SIZE) - 1, __teamPage + 1); renderTeamViewPage(); };
 
-  // Horas totales del slice con concurrencia limitada (4)
-  const todayKey = Today.key;
-  runLimited(slice, 4, async (emp)=>{
-    try{
-      let d = await API.getSchedule(emp.email, 0, __tvController);
+ runLimited(slice, 4, async (emp)=>{
+  // ⬇️ NUEVO: manejar fila sin email (data-email vacío)
+  if (!emp?.email) {
+    const tr = Array.from(body.querySelectorAll('tr[data-email]'))
+      .find(r => (r.dataset.email || '').trim().toLowerCase() === '');
+    if (tr){
+      tr.querySelector(".tv-hours").textContent = "—";
+      const liveCell = tr.querySelector(".tv-live");
+      liveCell.textContent = "⚠ no email";
+      liveCell.style.color = "#e60000";
+    }
+    return;
+  }
+
+  try{
+    let d = await API.getSchedule(emp.email, 0, __tvController);
+    // (tu fallback sin offset va aquí si ya lo pusiste) 
 // Fallback: si vino vacío, reintenta SIN offset (ruta más robusta)
 if (!d || !Array.isArray(d.days) || d.days.length === 0) {
   const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`;

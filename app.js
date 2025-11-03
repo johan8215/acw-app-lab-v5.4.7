@@ -462,10 +462,11 @@ function renderTeamViewPage() {
 
   const start = __teamPage * TEAM_PAGE_SIZE;
   const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
-  const body = $("#tvBody", box);
+  const body  = $("#tvBody", box);
+  const todayKey = Today.key;
 
   body.innerHTML = slice.map(emp => `
-    <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
+    <tr data-email="${emp.email || ''}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
       <td><b>${emp.name}</b></td>
       <td class="tv-hours">—</td>
       <td class="tv-live">—</td>
@@ -475,32 +476,34 @@ function renderTeamViewPage() {
   $("#tvPrev", box).onclick = () => { __teamPage = Math.max(0, __teamPage - 1); renderTeamViewPage(); };
   $("#tvNext", box).onclick = () => { __teamPage = Math.min(Math.ceil(__teamList.length / TEAM_PAGE_SIZE) - 1, __teamPage + 1); renderTeamViewPage(); };
 
- runLimited(slice, 4, async (emp)=>{
-  // ⬇️ NUEVO: manejar fila sin email (data-email vacío)
-  if (!emp?.email) {
-    const tr = Array.from(body.querySelectorAll('tr[data-email]'))
-      .find(r => (r.dataset.email || '').trim().toLowerCase() === '');
-    if (tr){
-      tr.querySelector(".tv-hours").textContent = "—";
-      const liveCell = tr.querySelector(".tv-live");
-      liveCell.textContent = "⚠ no email";
-      liveCell.style.color = "#e60000";
+  // -------- Horas + Live del slice (con manejo "no email" y fallback) --------
+  runLimited(slice, 4, async (emp) => {
+    // ⬇️ NUEVO: fila sin email → marcar y salir
+    if (!emp?.email) {
+      const trNoEmail = box.querySelector('tr[data-email=""]');
+      if (trNoEmail){
+        trNoEmail.querySelector(".tv-hours").textContent = "—";
+        const liveCell = trNoEmail.querySelector(".tv-live");
+        liveCell.textContent = "⚠ no email";
+        liveCell.style.color = "#e60000";
+      }
+      return;
     }
-    return;
-  }
 
-  try{
-    let d = await API.getSchedule(emp.email, 0, __tvController);
-    // (tu fallback sin offset va aquí si ya lo pusiste) 
-// Fallback: si vino vacío, reintenta SIN offset (ruta más robusta)
-if (!d || !Array.isArray(d.days) || d.days.length === 0) {
-  const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`;
-  d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
-}
-      // Sustituye esa línea por:
-const tr = Array.from(body.querySelectorAll('tr[data-email]'))
-  .find(r => (r.dataset.email||'').trim().toLowerCase() === (emp.email||'').trim().toLowerCase());
+    try{
+      // Preferente: API con TTL
+      let d = await API.getSchedule(emp.email, 0, __tvController);
+      // Fallback: reintento directo SIN offset si vino vacío
+      if (!d || !Array.isArray(d.days) || d.days.length === 0) {
+        const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`;
+        d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
+      }
+
+      const tr = box.querySelector(`tr[data-email="${cssEscape(emp.email)}"]`) ||
+                 Array.from(body.querySelectorAll('tr[data-email]'))
+                   .find(r => (r.dataset.email||'').trim().toLowerCase() === (emp.email||'').trim().toLowerCase());
       if (!tr) return;
+
       tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (Number(d.total || 0)).toFixed(1) : "0";
 
       // Live
@@ -521,28 +524,38 @@ const tr = Array.from(body.querySelectorAll('tr[data-email]'))
         liveCell.textContent = "—";
         liveCell.style.color="#aaa"; liveCell.style.fontWeight="400"; liveCell.style.textShadow="none";
       }
-    }catch(e){}
+    }catch(e){
+      // silenciar: evita romper toda la página
+    }
   });
 
-  // Interval SOLO mientras Team View está visible (cada 2 min)
+  // -------- Interval SOLO visible (cada 2 min) con mismo manejo --------
   if (__tvIntervalId){ clearInterval(__tvIntervalId); __tvIntervalId=null; }
   __tvIntervalId = setInterval(async ()=>{
     const rows = $all(".tv-table tr[data-email]", box);
-    const sliceNow = rows.map(r=>({
-      email: r.dataset.email, rowEl: r
-    }));
-    // actualiza live del slice usando caché de 60s
+    const sliceNow = rows.map(r=>({ email: r.dataset.email || '', rowEl: r }));
+
     await runLimited(sliceNow, 4, async (info)=>{
+      if (!info?.email) {
+        const liveCell = info.rowEl.querySelector(".tv-live");
+        info.rowEl.querySelector(".tv-hours").textContent = "—";
+        liveCell.textContent = "⚠ no email";
+        liveCell.style.color = "#e60000";
+        return;
+      }
+
       let d = await API.getSchedule(info.email, 0, __tvController);
-// Fallback: reintento SIN offset si viene vacío
-if (!d || !Array.isArray(d.days) || d.days.length === 0) {
-  const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(info.email)}`;
-  d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
-}
+      if (!d || !Array.isArray(d.days) || d.days.length === 0) {
+        const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(info.email)}`;
+        d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
+      }
+
       const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===Today.key);
       const liveCell = info.rowEl.querySelector(".tv-live");
       const totalCell= info.rowEl.querySelector(".tv-hours");
+
       if (!today?.shift){ liveCell.textContent="—"; return; }
+
       if (today.shift.trim().endsWith(".")){
         const startTime = parseTime(today.shift.replace(/\.$/,"").trim());
         if (!startTime) return;

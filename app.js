@@ -1807,3 +1807,62 @@ console.log(`✅ ACW-App loaded → ${CONFIG?.VERSION||"v5.6.3 Turbo"} | Base: $
   };
   document.addEventListener("DOMContentLoaded", ()=> document.body.appendChild(b));
 })();
+/* ==== ACW — ONE-PASTE SCHEDULE PATCH (drop at very end) ==== */
+(function(){
+  if (window.__acwSchedulePatched__) return; // idempotente
+  window.__acwSchedulePatched__ = true;
+
+  // Guarda el fetchJSON original (o crea uno mínimo si no existe)
+  const __origFetchJSON__ = window.fetchJSON || (async function(url, {signal} = {}){
+    const r = await fetch(url, { cache:"no-store", signal }); 
+    return r.json();
+  });
+
+  // Helper: ¿respuesta con días válidos?
+  function okDays(d){ return d && Array.isArray(d.days) && d.days.length > 0; }
+
+  // Ejecuta SmartSchedule con reintentos automáticos:
+  async function robustSchedule(url, opts){
+    let data = null;
+    try { data = await __origFetchJSON__(url, opts); } catch { data = null; }
+    // Si ya vino bien, devuelve
+    if (okDays(data)) return data;
+
+    // Quita &offset=N y reintenta SIN offset (algunos deploys devuelven vacío con offset)
+    const baseNoOffset = String(url).replace(/&offset=\d+/i, "");
+    try {
+      const d2 = await __origFetchJSON__(baseNoOffset, { ...opts, ttl: (window.API?.schedTTL0||opts?.ttl) });
+      if (okDays(d2)) return d2;
+    } catch {}
+
+    // Fallback final: vieja action=getSchedule (compatibilidad)
+    try {
+      const legacy = baseNoOffset.replace(/getSmartSchedule/i, "getSchedule");
+      const d3 = await __origFetchJSON__((legacy), { ...opts, ttl: (window.API?.schedTTL0||opts?.ttl) });
+      if (okDays(d3)) return d3;
+    } catch {}
+
+    // Devuelve lo que haya (aunque vacío) para no romper llamados
+    return data;
+  }
+
+  // 1) Parchea fetchJSON: solo intercepta cuando es getSmartSchedule
+  window.fetchJSON = async function(url, opts = {}){
+    if (typeof url === "string" && /action=getSmartSchedule/i.test(url)){
+      return robustSchedule(url, opts);
+    }
+    // resto de URLs igual que siempre
+    return __origFetchJSON__(url, opts);
+  };
+
+  // 2) Fuerza API.getSchedule a usar el flujo robusto (aunque haya múltiples definiciones arriba)
+  if (!window.API) window.API = {};
+  window.API.getSchedule = async function(email, offset = 0, controller){
+    const ttl = offset === 0 ? (API.schedTTL0 || 60000) : (API.schedTTLOld || 300000);
+    const base = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`;
+    const url  = offset ? `${base}&offset=${offset}` : base;
+    return robustSchedule(url, { ttl, signal: controller?.signal });
+  };
+
+  console.log("🩹 ACW one-paste schedule patch active");
+})();

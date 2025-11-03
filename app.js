@@ -479,7 +479,12 @@ function renderTeamViewPage() {
   const todayKey = Today.key;
   runLimited(slice, 4, async (emp)=>{
     try{
-      const d = await API.getSchedule(emp.email, 0, __tvController);
+      let d = await API.getSchedule(emp.email, 0, __tvController);
+// Fallback: si vino vacío, reintenta SIN offset (ruta más robusta)
+if (!d || !Array.isArray(d.days) || d.days.length === 0) {
+  const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(emp.email)}`;
+  d = await fetchJSON(u, { ttl: API.schedTTL0, signal: __tvController?.signal });
+}
       // Sustituye esa línea por:
 const tr = Array.from(body.querySelectorAll('tr[data-email]'))
   .find(r => (r.dataset.email||'').trim().toLowerCase() === (emp.email||'').trim().toLowerCase());

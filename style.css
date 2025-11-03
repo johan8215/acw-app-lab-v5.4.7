@@ -306,3 +306,12 @@ tr.today td{
 }
 .modal{ display:none; }
 .modal.show{ display:flex !important; }
+
+/* Share rojo en History */
+.acwh-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.acwh-head .acwh-share{
+  background:#ff3b30; color:#fff; border:none; border-radius:10px;
+  padding:6px 10px; font-weight:800; cursor:pointer;
+  box-shadow:0 2px 10px rgba(255,59,48,.35);
+}
+.acwh-head .acwh-share:active{ transform:translateY(1px); }

@@ -311,3 +311,13 @@ tr.today td{
   `;
   document.head.appendChild(s);
 })();
+
+/* ACW Settings Rescue */
+#settingsBtn{
+  position: fixed;
+  top: 14px; right: 14px;
+  z-index: 12000;
+  pointer-events: auto;
+}
+.modal{ display:none; }
+.modal.show{ display:flex !important; }

@@ -1,5 +1,5 @@
 /* ============================================================
-   🎨 ACW-App — Blue Glass White Edition (v5.6.2) — CLEAN
+   🎨 ACW-App — Blue Glass White Edition (v5.6.3) — CLEAN
    Johan A. Giraldo (JAG15) & Sky — Nov 2025
    ============================================================ */
 
@@ -129,7 +129,7 @@ tr.today td{
 }
 
 /* ============================================================
-   🧑‍🤝‍🧑 Team View (uses inline styles + .show)
+   🧑‍🤝‍🧑 Team View
    ============================================================ */
 .team-btn{
   position:fixed; top:25px; right:40px;
@@ -141,13 +141,11 @@ tr.today td{
 }
 .team-btn:hover{ background:#f9f9f9; box-shadow:0 0 25px rgba(0,136,255,.6); }
 
-/* Solo animación/visibilidad; el resto viene inline desde JS */
 #directoryWrapper.show{
   visibility:visible !important;
   opacity:1 !important;
   transform:translate(-50%, -50%) scale(1) !important;
 }
-
 .directory-table{
   width:100%; font-size:15px; border-collapse:collapse; margin-top:10px;
 }
@@ -215,7 +213,7 @@ tr.today td{
 .emp-actions .btn-tomorrow{ background:linear-gradient(135deg,#ff8800,#ffaa33); }
 .emp-actions .btn-tomorrow:hover{ background:linear-gradient(135deg,#ffaa33,#ffbb55); transform:translateY(-2px); }
 
-.emp-status-msg{ width:100%; text-align:center; font-weight:600; font-size:.9em; margin-top:6px; }
+.emp-status-msg{ width:100%; text-align:center; font-weight:600; font-size:.9em; }
 
 /* ============================================================
    🔐 Change Password Modal
@@ -240,7 +238,7 @@ tr.today td{
   padding:22px 24px; text-align:center; animation:popIn .25s ease;
 }
 .acwh-head{ display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
-.acwh-title{ margin:0 auto; color:var(--blue); font-weight:700; }
+.acwh-title{ margin:0 auto; color:#0078ff; font-weight:700; }
 .acwh-close{ background:none; border:none; font-size:22px; cursor:pointer; color:#333; }
 .acwh-sub{ color:#777; font-size:13px; margin:2px 0 10px; }
 
@@ -261,57 +259,20 @@ tr.today td{
   padding:8px 12px; font-weight:700; cursor:pointer;
 }
 .acwh-back{
-  background:#fff; color:var(--blue); border:2px solid rgba(0,120,255,.35);
+  background:#fff; color:#0078ff; border:2px solid rgba(0,120,255,.35);
   border-radius:10px; padding:6px 10px; font-weight:600; cursor:pointer;
 }
 
 .acwh-table{ width:100%; border-collapse:collapse; margin-top:10px; }
 .acwh-table th{
-  text-align:left; color:var(--blue);
-  border-bottom:2px solid rgba(0,120,255,.15);
+  text-align:left; color:#0078ff;
+  border-bottom:2px solid rgba(0,120,255,0.15);
   padding:6px 4px;
 }
-.acwh-table td{ padding:6px 4px; border-bottom:1px solid rgba(0,0,0,.08); }
+.acwh-table td{ padding:6px 4px; border-bottom:1px solid rgba(0,0,0,0.08); }
 .acwh-table td:last-child{ text-align:right; }
 .acwh-total-line{ text-align:right; font-weight:800; color:var(--red); margin:10px 0 2px; }
-
-/* ============================================================
-   ⬇️ Download button
-   ============================================================ */
-.download-btn{
-  display:inline-block; width:90%; margin-top:8px; padding:10px 18px;
-  border:none; border-radius:8px;
-  background:linear-gradient(135deg,var(--blue),var(--blue-2));
-  color:#fff; font-weight:600; font-size:1em;
-  box-shadow:0 4px 12px rgba(0,123,255,.35);
-  cursor:pointer; transition:.25s;
-}
-.download-btn:hover{
-  transform:translateY(-1px);
-  background:linear-gradient(135deg,#1a8cff,#4db8ff);
-  box-shadow:0 6px 16px rgba(0,136,255,.45);
-}
 
 /* ---------- Shared Animations ---------- */
 @keyframes fadeIn{ from{opacity:0; transform:translateY(10px);} to{opacity:1; transform:translateY(0);} }
 @keyframes popIn{ from{opacity:0; transform:scale(.96);} to{opacity:1; transform:scale(1);} }
-
-
-/* ACW Settings Rescue */
-#settingsBtn{
-  position: fixed;
-  top: 14px; right: 14px;
-  z-index: 12000;
-  pointer-events: auto;
-}
-.modal{ display:none; }
-.modal.show{ display:flex !important; }
-
-/* Share rojo en History */
-.acwh-head { display:flex; align-items:center; justify-content:space-between; gap:8px; }
-.acwh-head .acwh-share{
-  background:#ff3b30; color:#fff; border:none; border-radius:10px;
-  padding:6px 10px; font-weight:800; cursor:pointer;
-  box-shadow:0 2px 10px rgba(255,59,48,.35);
-}
-.acwh-head .acwh-share:active{ transform:translateY(1px); }

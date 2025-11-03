@@ -1,194 +1,67 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Allston Car Wash — Blue Glass White Edition</title>
-
-  <!-- 📱 PWA META -->
-  <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#ffffff" />
-
-  <!-- 🎨 Styles -->
-  <link rel="stylesheet" href="style.css" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <title>ACW‑App | Allston Car Wash</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="512x512" href="acw-icon-512.png">
+  <link rel="stylesheet" href="style.css">
 </head>
-
 <body>
-
-  <!-- 🔐 LOGIN SCREEN -->
-  <div id="login" class="container glass">
+  <div class="container" id="login">
     <h1>ALLSTON CAR WASH</h1>
-    <input id="email" type="email" placeholder="Email" autocomplete="email" />
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password" />
+    <input id="email" type="email" placeholder="Email" autocomplete="email">
+    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
     <button id="signInBtn" onclick="loginUser()">Sign In</button>
     <p id="diag" class="error"></p>
+    <footer class="hud">
+      Powered by JAG15 | Allston Car Wash © 2025<br>
+      <span id="versionLabel">v5.6.3 — Blue Glass White Connected</span>
+    </footer>
   </div>
 
-  <!-- 👋 WELCOME DASHBOARD -->
-  <div id="welcome" class="container glass" style="display:none;">
-    <h2 id="welcomeName"></h2>
-    <p id="welcomeRole"></p>
+  <div class="container" id="welcome" style="display:none;">
+    <h1 id="welcomeName">Welcome</h1>
+    <div id="welcomeRole" style="opacity:.7; margin-bottom:8px;"></div>
     <div id="schedule"></div>
-    <p id="clock" class="clock"></p>
-    <p id="totalHours" class="total"></p>
+    <button class="download-btn" onclick="openHistoryFor(currentUser?.email, currentUser?.name)">📚 My History (5w)</button>
   </div>
 
-<!-- ⚙️ SETTINGS BUTTON -->
-<button id="settingsBtn" class="gear-btn" onclick="openSettings()">⚙️</button>
-
-<!-- ⚙️ SETTINGS MODAL -->
-<div id="settingsModal" class="modal" style="display:none;">
-  <div class="modal-content glass">
-    <span class="close" onclick="closeSettings()">×</span>
-    <h3>⚙️ Settings</h3>
-
-    <div class="settings-section">
-      <button onclick="refreshApp()">🔄 Check for Updates</button>
-      <button onclick="logoutUser()">🚪 Log Out</button>
-      <button onclick="openChangePassword()">🔑 Change Password</button>
-    </div>
-
-    <div class="settings-section" style="margin-top:18px;text-align:center;">
-      <button id="installToPhoneBtn" class="download-btn">📲 Download to Phone</button>
-      <p id="installTip" style="font-size:0.9em;color:#99bbff;margin-top:8px;"></p>
+  <!-- Settings modal -->
+  <div id="settingsModal" class="modal" style="display:none;">
+    <div class="modal-content glass">
+      <span class="close" onclick="closeSettings()">×</span>
+      <h3>Settings</h3>
+      <div class="settings-section">
+        <button onclick="openHistoryFor(currentUser?.email, currentUser?.name)">📚 Open My History (5w)</button>
+        <button id="changePassBtn" onclick="openChangePassword()">🔐 Change Password</button>
+        <button onclick="refreshApp()">🧼 Update / Clear Cache</button>
+        <button onclick="logoutUser()">👋 Logout</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- 🔑 CHANGE PASSWORD MODAL -->
-<div id="changePasswordModal" class="modal" style="display:none;">
-  <div class="modal-content glass">
-    <span class="close" onclick="closeChangePassword()">×</span>
-    <h3>🔑 Change Password</h3>
-    <div class="settings-section">
-      <input id="oldPass" type="password" placeholder="Current password" />
-      <input id="newPass" type="password" placeholder="New password" />
-      <input id="confirmPass" type="password" placeholder="Confirm new password" />
-      <button onclick="submitChangePassword()">✅ Save New Password</button>
-      <p id="passDiag" class="error" style="margin-top:8px;"></p>
-    </div>
-  </div>
-</div>
-  <!-- 🧾 FOOTER -->
-  <footer class="hud bottom-center">
-    Powered by <b>JAG15</b> | Allston Car Wash © 2025<br>
-    <small>v5.6.2 — Blue Glass White Edition</small>
-  </footer>
+  <button class="gear-btn" aria-label="Settings" onclick="openSettings()">⚙️</button>
 
-  <!-- 🧠 CORE SCRIPTS -->
-  <script src="./config.js"></script>
-  <script src="./app.js"></script>
-
-  <!-- 🧩 SERVICE WORKER -->
+  <script src="config.js"></script>
+  <script src="app.js"></script>
   <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./service-worker.js")
-        .then(() => console.log("✅ ACW Service Worker registered"))
-        .catch(err => console.warn("SW registration failed:", err));
+    // Register the service worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(()=>{});
+      });
     }
-  </script>
-
-  <!-- 📲 INSTALL HANDLER -->
-  <script>
-    const installBtn = document.getElementById("installToPhoneBtn");
-    const tip = document.getElementById("installTip");
-    let deferredPrompt;
-
-    function isIOS(){ return /iphone|ipad|ipod/i.test(navigator.userAgent); }
-    function isInStandaloneMode(){ return window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone; }
-
-    window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault(); deferredPrompt = e;
-      tip.textContent = "Install ACW-App for faster access 🚀";
-    });
-
-    window.addEventListener("load", () => {
-      if (isIOS() && !isInStandaloneMode()) {
-        tip.innerHTML = "📲 On iPhone: Tap <b>Share</b> → <b>Add to Home Screen</b>";
-        tip.style.color = "#33a0ff";
-        installBtn.textContent = "📲 How to Install on iPhone";
-      }
-    });
-
-    installBtn.addEventListener("click", async () => {
-      if (deferredPrompt) {
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        tip.textContent = outcome === "accepted"
-          ? "✅ App installed successfully!"
-          : "ℹ️ Installation canceled.";
-        deferredPrompt = null;
-        return;
-      }
-      if (isIOS()) {
-        tip.innerHTML = "📲 On iPhone: Tap <b>Share</b> → <b>Add to Home Screen</b>";
-        tip.style.color = "#33a0ff";
-        return;
-      }
-      tip.textContent = "💻 On desktop: use Chrome or Edge to install.";
-      tip.style.color = "#ccc";
-    });
-
-    window.addEventListener("appinstalled", () => {
-      installBtn.style.display = "none";
-      tip.textContent = "✅ ACW-App already installed.";
-    });
+    // Show version in footer
+    (function(){
+      const v = (window.CONFIG && CONFIG.VERSION) || 'v5.6.3';
+      const el = document.getElementById('versionLabel');
+      if (el) el.textContent = v;
+    })();
   </script>
 </body>
 </html>
-<script>
-// === ACW Settings Rescue v1 — drop-in safe patch ===
-(function(){
-  function ensureModal(){
-    let m = document.getElementById("settingsModal");
-    if (!m){
-      m = document.createElement("div");
-      m.id = "settingsModal";
-      m.className = "modal";
-      m.style.display = "none";
-      m.innerHTML = `
-        <div class="modal-content glass" style="padding:22px; min-width:300px; position:relative;">
-          <button class="close" style="position:absolute; right:10px; top:8px; background:none; border:0; font-size:20px; cursor:pointer;">×</button>
-          <h3>⚙️ Settings</h3>
-          <div class="settings-section">
-            <button id="__acwUpdateBtn">🔄 Check for Updates</button>
-            <button onclick="logoutUser()">🚪 Log Out</button>
-            <button onclick="openChangePassword()">🔑 Change Password</button>
-          </div>
-          <p id="installTip" style="font-size:.9em;color:#99bbff;margin-top:8px;"></p>
-        </div>`;
-      document.body.appendChild(m);
-      m.querySelector(".close").onclick = closeSettings;
-      m.addEventListener("click", (e)=>{ if(e.target===m) closeSettings(); });
-      const up = m.querySelector("#__acwUpdateBtn");
-      if (up) up.onclick = (window.refreshApp||(()=>location.reload()));
-    }
-    return m;
-  }
-
-  function openSettingsFix(){
-    const m = ensureModal();
-    document.getElementById("acwhOverlay")?.remove();
-    document.getElementById("directoryWrapper")?.remove();
-    Object.assign(m.style, { display:"flex", alignItems:"center", justifyContent:"center", zIndex:12000 });
-    requestAnimationFrame(()=> m.classList.add("show"));
-    const onKey = (ev)=>{ if (ev.key === "Escape") closeSettings(); };
-    document.addEventListener("keydown", onKey, { once:true });
-  }
-
-  function closeSettings(){
-    const m = document.getElementById("settingsModal");
-    if (!m) return;
-    m.classList.remove("show");
-    setTimeout(()=> m.style.display="none", 150);
-  }
-
-  window.openSettings = openSettingsFix;
-  window.closeSettings = closeSettings;
-
-  document.addEventListener("DOMContentLoaded", ()=>{
-    const gear = document.getElementById("settingsBtn");
-    if (gear) gear.onclick = openSettingsFix;
-  });
-})();
-</script>

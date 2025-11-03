@@ -1,7 +1,7 @@
 {
   "name": "ACW-App | Allston Car Wash",
   "short_name": "ACW",
-  "description": "Allston Car Wash – Employee Live Schedule & Team View",
+  "description": "Allston Car Wash \u2013 Employee Live Schedule & Team View",
   "start_url": "./index.html",
   "display": "standalone",
   "orientation": "portrait",

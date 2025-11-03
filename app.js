@@ -487,27 +487,21 @@ const DirectoryStore = (() => {
 
 /* === Override de API.getDirectory: remoto → fallback local; o solo local si flag === */
 API.getDirectory = async function(controller){
-  // 1) Solo local si así lo pide config
-  if (CONFIG.USE_LOCAL_DIRECTORY) {
-    const dir = DirectoryStore.getAll();
-    return { ok:true, directory: dir, source:"local-only" };
-  }
+  const u = `${CONFIG.BASE_URL}?action=getEmployeesDirectory`;
+  try {
+    const r = await fetchJSON(u, { ttl: API.dirTTL, signal: controller?.signal });
+    if (r?.ok) return r;
+  } catch(_) {}
 
-  // 2) Intenta remoto (como antes)
-  try{
-    const u = `${CONFIG.BASE_URL}?action=getEmployeesDirectory`;
-    const data = await fetchJSON(u, { ttl: API.dirTTL, signal: controller?.signal });
-    if (data?.ok && Array.isArray(data.directory) && data.directory.length){
-      // guarda copia local para offline
-      DirectoryStore.setAll(data.directory, "remote-sync");
-      return { ...data, source:"remote" };
+  // Fallback local (si subiste /directory.json)
+  try {
+    const local = await fetchJSON("./directory.json", { ttl: 60_000 });
+    if (Array.isArray(local?.directory) || Array.isArray(local)) {
+      return { ok:true, directory: local.directory || local };
     }
-    // si remoto no trae nada, usa local
-  }catch(e){ /* cae a local */ }
+  } catch(_) {}
 
-  // 3) Fallback local
-  const local = DirectoryStore.getAll();
-  return { ok:true, directory: local, source:"local-fallback" };
+  return { ok:false, directory: [] };
 };
 
 /* === Integración suave con showWelcome (teléfono del usuario) === */

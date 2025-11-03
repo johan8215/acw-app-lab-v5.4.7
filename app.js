@@ -480,7 +480,9 @@ function renderTeamViewPage() {
   runLimited(slice, 4, async (emp)=>{
     try{
       const d = await API.getSchedule(emp.email, 0, __tvController);
-      const tr = body.querySelector(`tr[data-email="${cssEscape(emp.email)}"]`);
+      // Sustituye esa línea por:
+const tr = Array.from(body.querySelectorAll('tr[data-email]'))
+  .find(r => (r.dataset.email||'').trim().toLowerCase() === (emp.email||'').trim().toLowerCase());
       if (!tr) return;
       tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (Number(d.total || 0)).toFixed(1) : "0";
 

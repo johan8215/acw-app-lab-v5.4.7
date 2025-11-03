@@ -1,0 +1,6 @@
+[
+  { "name": "E. REYES",       "email": "e.reyes@acw.com",    "role": "employee",   "phone": "+1 617 555 0101" },
+  { "name": "M. QUINTANILLA", "email": "m.quinta@acw.com",   "role": "employee",   "phone": "+1 617 555 0102" },
+  { "name": "HE. GONZALES",   "email": "he.gonzales@acw.com","role": "employee",   "phone": "+1 617 555 0103" }
+  // ... agrega todos aquí; este archivo será la “verdad” del directorio
+]

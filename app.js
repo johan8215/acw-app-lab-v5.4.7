@@ -615,6 +615,7 @@ function renderTeamViewPage() {
     transition: "all 0.35s ease"
   });
 
+  const totalPages = Math.max(1, Math.ceil(__teamList.length / TEAM_PAGE_SIZE));
   box.innerHTML = `
     <div class="tv-head" style="display:flex;justify-content:space-between;align-items:center;">
       <h3 style="margin:0;color:#0078ff;text-shadow:0 0 8px rgba(0,120,255,0.25);">Team View</h3>
@@ -622,89 +623,98 @@ function renderTeamViewPage() {
     </div>
     <div class="tv-pager" style="margin:10px 0;">
       <button class="tv-nav" id="tvPrev" ${__teamPage === 0 ? "disabled" : ""}>‹ Prev</button>
-      <span class="tv-index" style="font-weight:600;color:#0078ff;">Page ${__teamPage + 1} / ${Math.max(1, Math.ceil(__teamList.length / TEAM_PAGE_SIZE))}</span>
-      <button class="tv-nav" id="tvNext" ${(__teamPage + 1) >= Math.ceil(__teamList.length / TEAM_PAGE_SIZE) ? "disabled" : ""}>Next ›</button>
+      <span class="tv-index" style="font-weight:600;color:#0078ff;">Page ${__teamPage + 1} / ${totalPages}</span>
+      <button class="tv-nav" id="tvNext" ${(__teamPage + 1) >= totalPages ? "disabled" : ""}>Next ›</button>
     </div>
     <table class="directory-table tv-table" style="width:100%;font-size:15px;border-collapse:collapse;margin-top:10px;">
       <tr><th>Name</th><th>Hours</th><th>Live (Working)</th><th></th></tr>
       <tbody id="tvBody"></tbody>
     </table>
   `;
-
   document.body.appendChild(box);
 
   const start = __teamPage * TEAM_PAGE_SIZE;
   const slice = __teamList.slice(start, start + TEAM_PAGE_SIZE);
-  const body = $("#tvBody", box);
+  const body  = $("#tvBody", box);
 
-  body.innerHTML = slice.map(emp => `
-    <tr data-email="${emp.email}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
-      <td><b>${emp.name}</b></td>
-      <td class="tv-hours">—</td>
-      <td class="tv-live">—</td>
-      <td><button class="open-btn" onclick="openEmployeePanel(this)">Open</button></td>
-    </tr>`).join("");
+  // Pinta filas (si no hay email → "n/a" y botón desactivado)
+  body.innerHTML = slice.map(emp => {
+    const hasEmail = !!(emp.email || "").trim();
+    return `
+      <tr data-email="${hasEmail ? emp.email : ""}" data-name="${emp.name}" data-role="${emp.role || ''}" data-phone="${emp.phone || ''}">
+        <td><b>${emp.name}</b></td>
+        <td class="tv-hours">${hasEmail ? "—" : "n/a"}</td>
+        <td class="tv-live">—</td>
+        <td>
+          <button class="open-btn" ${hasEmail ? `onclick="openEmployeePanel(this)"` : "disabled title='No email'"}>Open</button>
+        </td>
+      </tr>`;
+  }).join("");
 
   $("#tvPrev", box).onclick = () => { __teamPage = Math.max(0, __teamPage - 1); renderTeamViewPage(); };
-  $("#tvNext", box).onclick = () => { __teamPage = Math.min(Math.ceil(__teamList.length / TEAM_PAGE_SIZE) - 1, __teamPage + 1); renderTeamViewPage(); };
+  $("#tvNext", box).onclick = () => { __teamPage = Math.min(totalPages - 1, __teamPage + 1); renderTeamViewPage(); };
 
-  // Horas totales del slice con concurrencia limitada (4)
+  // Horas totales del slice solo para quienes tienen email
   const todayKey = Today.key;
-  runLimited(slice, 4, async (emp)=>{
-    try{
+  const sliceSafe = slice.filter(emp => !!(emp.email || "").trim());
+
+  runLimited(sliceSafe, 4, async (emp) => {
+    try {
       const d = await API.getSchedule(emp.email, 0, __tvController);
       const tr = body.querySelector(`tr[data-email="${cssEscape(emp.email)}"]`);
       if (!tr) return;
+
       tr.querySelector(".tv-hours").textContent = (d && d.ok) ? (Number(d.total || 0)).toFixed(1) : "0";
 
       // Live
       const liveCell = tr.querySelector(".tv-live");
-      const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===todayKey);
-      if (!today?.shift){ liveCell.textContent="—"; return; }
+      const today = d?.days?.find(x => x.name.slice(0,3).toLowerCase() === todayKey);
+      if (!today?.shift) { liveCell.textContent = "—"; return; }
 
-      if (today.shift.trim().endsWith(".")){
-        const startTime = parseTime(today.shift.replace(/\.$/,"").trim());
+      if (today.shift.trim().endsWith(".")) {
+        const startTime = parseTime(today.shift.replace(/\.$/, "").trim());
         if (!startTime) return;
-        const diff = Math.max(0,(Date.now()-startTime.getTime())/36e5);
+        const diff = Math.max(0, (Date.now() - startTime.getTime()) / 36e5);
         liveCell.innerHTML = `🟢 ${diff.toFixed(1)}h`;
-        liveCell.style.color="#33ff66"; liveCell.style.fontWeight="600"; liveCell.style.textShadow="0 0 10px rgba(51,255,102,.6)";
+        liveCell.style.color = "#33ff66"; liveCell.style.fontWeight = "600"; liveCell.style.textShadow = "0 0 10px rgba(51,255,102,.6)";
         const totalCell = tr.querySelector(".tv-hours");
-        const base = parseFloat(totalCell.textContent)||0;
-        totalCell.innerHTML = `${(base+diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
+        const base = parseFloat(totalCell.textContent) || 0;
+        totalCell.innerHTML = `${(base + diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
       } else {
         liveCell.textContent = "—";
-        liveCell.style.color="#aaa"; liveCell.style.fontWeight="400"; liveCell.style.textShadow="none";
+        liveCell.style.color = "#aaa"; liveCell.style.fontWeight = "400"; liveCell.style.textShadow = "none";
       }
-    }catch(e){}
+    } catch (e) {}
   });
 
   // Interval SOLO mientras Team View está visible (cada 2 min)
-  if (__tvIntervalId){ clearInterval(__tvIntervalId); __tvIntervalId=null; }
-  __tvIntervalId = setInterval(async ()=>{
+  if (__tvIntervalId) { clearInterval(__tvIntervalId); __tvIntervalId = null; }
+  __tvIntervalId = setInterval(async () => {
     const rows = $all(".tv-table tr[data-email]", box);
-    const sliceNow = rows.map(r=>({
-      email: r.dataset.email, rowEl: r
-    }));
-    // actualiza live del slice usando caché de 60s
-    await runLimited(sliceNow, 4, async (info)=>{
+    const sliceNow = rows
+      .map(r => ({ email: (r.dataset.email || "").trim(), rowEl: r }))
+      .filter(x => x.email); // solo con email
+
+    await runLimited(sliceNow, 4, async (info) => {
       const d = await API.getSchedule(info.email, 0, __tvController);
-      const today = d?.days?.find(x=> x.name.slice(0,3).toLowerCase()===Today.key);
-      const liveCell = info.rowEl.querySelector(".tv-live");
-      const totalCell= info.rowEl.querySelector(".tv-hours");
-      if (!today?.shift){ liveCell.textContent="—"; return; }
-      if (today.shift.trim().endsWith(".")){
-        const startTime = parseTime(today.shift.replace(/\.$/,"").trim());
+      const today = d?.days?.find(x => x.name.slice(0,3).toLowerCase() === Today.key);
+      const liveCell  = info.rowEl.querySelector(".tv-live");
+      const totalCell = info.rowEl.querySelector(".tv-hours");
+      if (!today?.shift) { liveCell.textContent = "—"; return; }
+
+      if (today.shift.trim().endsWith(".")) {
+        const startTime = parseTime(today.shift.replace(/\.$/, "").trim());
         if (!startTime) return;
-        const diff = Math.max(0,(Date.now()-startTime.getTime())/36e5);
+        const diff = Math.max(0, (Date.now() - startTime.getTime()) / 36e5);
         liveCell.innerHTML = `🟢 ${diff.toFixed(1)}h`;
-        liveCell.style.color="#33ff66"; liveCell.style.fontWeight="600"; liveCell.style.textShadow="0 0 10px rgba(51,255,102,.6)";
-        const base = parseFloat(totalCell.textContent)||0;
-        if (!/span/.test(totalCell.innerHTML)){
-          totalCell.innerHTML = `${(base+diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
+        liveCell.style.color = "#33ff66"; liveCell.style.fontWeight = "600"; liveCell.style.textShadow = "0 0 10px rgba(51,255,102,.6)";
+        const base = parseFloat(totalCell.textContent) || 0;
+        if (!/span/.test(totalCell.innerHTML)) {
+          totalCell.innerHTML = `${(base + diff).toFixed(1)} <span style="color:#33a0ff;font-size:.85em;">(+${diff.toFixed(1)})</span>`;
         }
       } else {
         liveCell.textContent = "—";
-        liveCell.style.color="#aaa"; liveCell.style.fontWeight="400"; liveCell.style.textShadow="none";
+        liveCell.style.color = "#aaa"; liveCell.style.fontWeight = "400"; liveCell.style.textShadow = "none";
       }
     });
   }, 120000);
@@ -716,7 +726,6 @@ function renderTeamViewPage() {
     box.style.transform = "translate(-50%, -50%) scale(1)";
   }, 60);
 }
-
 /* =================== EMPLOYEE MODAL =================== */
 async function openEmployeePanel(btnEl){
   const tr = btnEl.closest("tr");

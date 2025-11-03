@@ -82,11 +82,13 @@ const API = {
     const u = `${CONFIG.BASE_URL}?action=getEmployeesDirectory`;
     return fetchJSON(u, { ttl: API.dirTTL, signal: controller?.signal });
   },
-  getSchedule(email, offset=0, controller){
-    const ttl = offset===0 ? API.schedTTL0 : API.schedTTLOld;
-    const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}&offset=${offset}`;
-    return fetchJSON(u, { ttl, signal: controller?.signal });
-  }
+  // Reemplaza COMPLETO API.getSchedule por esto
+getSchedule(email, offset = 0, controller){
+  const ttl = offset===0 ? API.schedTTL0 : API.schedTTLOld;
+  const base = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}`;
+  const u = offset===0 ? base : `${base}&offset=${offset}`;
+  return fetchJSON(u, { ttl, signal: controller?.signal });
+}
 };
 
 /* Concurrencia limitada simple (p-limit) */

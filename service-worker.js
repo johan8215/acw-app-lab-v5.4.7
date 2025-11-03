@@ -1,9 +1,9 @@
 // ===========================================================
-// 🧩 ACW-App Service Worker v5.6.2 — Fixed Offline & Cache
+// 🧩 ACW-App Service Worker v5.6.3 — Safer Updates
 // ===========================================================
 
-const CACHE_NAME = "acw-cache-v5.6.2";
-const FILES_TO_CACHE = [
+const CACHE_NAME = "acw-cache-v5.6.3";
+const CORE = [
   "./",
   "./index.html",
   "./style.css",
@@ -12,38 +12,65 @@ const FILES_TO_CACHE = [
   "./manifest.json"
 ];
 
-// 🧱 Instalar y cachear recursos básicos
+// 🧱 Instalar y precache
 self.addEventListener("install", (event) => {
-  console.log("🪣 Installing ACW Service Worker...");
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => cache.addAll(FILES_TO_CACHE))
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.addAll(CORE))
+      .then(() => self.skipWaiting())
   );
 });
 
-// 🧼 Activar y limpiar cachés antiguas
+// ♻️ Activar y limpiar versiones viejas
 self.addEventListener("activate", (event) => {
-  console.log("♻️ Activating new cache version");
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-    )
-  );
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)));
+    await self.clients.claim();
+  })());
 });
 
-// 🌐 Fetch con fallback y protección
+// 🌐 Estrategias de fetch
 self.addEventListener("fetch", (event) => {
   const req = event.request;
+  const url = new URL(req.url);
 
-  // ⚠️ No interceptar las llamadas al backend
-  if (req.url.includes("script.google.com/macros")) return;
+  // ⚠️ No interceptar backend GAS
+  if (url.hostname.includes("script.google.com")) return;
 
+  // 1) Navegación/HTML → network-first
+  if (req.mode === "navigate" || url.pathname.endsWith("/index.html")) {
+    event.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        return res;
+      }).catch(() => caches.match(req).then(r => r || caches.match("./index.html")))
+    );
+    return;
+  }
+
+  // 2) Críticos (JS de app y config) → network-first
+  if (/\/(app\.js|config\.js)$/.test(url.pathname)) {
+    event.respondWith(
+      fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        return res;
+      }).catch(() => caches.match(req))
+    );
+    return;
+  }
+
+  // 3) Resto → cache-first
   event.respondWith(
     caches.match(req).then((cached) => {
-      return cached || fetch(req).catch(() =>
-        new Response("Offline or not found", { status: 404 })
-      );
+      if (cached) return cached;
+      return fetch(req).then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(req, copy));
+        return res;
+      }).catch(() => new Response("Offline", { status: 503 }));
     })
   );
 });
-
-console.log("✅ ACW Service Worker v5.6.2 active");

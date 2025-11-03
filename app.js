@@ -332,3 +332,68 @@ window.openHistory = openHistory;
 window.exportData = exportData;
 
 console.log("✅ ACW-LITE v1.0 ready (local-first)");
+
+/* ===== ACW-LITE — Sync to Google (IMPORT) ===== */
+function postJSON(url, data, { signal } = {}){
+  return fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+    cache: "no-store",
+    signal
+  });
+}
+
+async function syncToGoogle(){
+  const base = (window.CONFIG && CONFIG.BASE_URL) || "";
+  if (!base){ toast("⚠️ Missing BASE_URL in config.js", "error"); return; }
+
+  // Guarda la key localmente la primera vez
+  let key = localStorage.getItem("acw.syncKey") || "";
+  if (!key){
+    key = prompt("Enter Integration Key (del GAS)");
+    if (!key) return;
+    localStorage.setItem("acw.syncKey", key);
+  }
+
+  // Armamos el dump (sin contraseñas)
+  const payload = {
+    meta: {
+      version: "ACW-LITE v1.0",
+      at: new Date().toISOString(),
+      actor: currentUser?.email || null,
+      device: navigator.userAgent
+    },
+    users: (window.Users?.all()||[]).map(({name,email,phone,role})=>({name,email,phone,role})),
+    schedules: (window.Sched?.all()||{})   // { email: { "Mon – Sun": [ {name,shift,hours}, ... ] } }
+  };
+
+  toast("☁️ Syncing…", "info");
+  try{
+    const res = await postJSON(`${base}?action=import&key=${encodeURIComponent(key)}`, payload);
+    const j = await res.json().catch(()=>null);
+    if (res.ok && j?.ok){
+      toast("✅ Synced to Google", "success");
+      if (window.navigator.vibrate) navigator.vibrate(60);
+    }else{
+      throw new Error(j?.error || `HTTP ${res.status}`);
+    }
+  }catch(e){
+    toast(`❌ Sync failed: ${e.message}`, "error");
+  }
+}
+
+// Inserta botón en Settings automáticamente
+(function injectSyncButton(){
+  const modal = document.getElementById("settingsModal");
+  if (!modal) return;
+  const sec = modal.querySelector(".settings-section");
+  if (!sec || document.getElementById("syncBtn")) return;
+  const b = document.createElement("button");
+  b.id = "syncBtn";
+  b.textContent = "☁️ Sync to Google";
+  b.onclick = syncToGoogle;
+  sec.appendChild(b);
+})();
+
+window.syncToGoogle = syncToGoogle;

@@ -158,11 +158,12 @@ function mergeDirectory(local, remote){
   return Array.from(byEmail.values());
 }
 
-/* =============== API helpers con TTL ========================== */
-const API = {
-  dirTTL:     CONFIG.DIR_TTL_MS || 5*60*1000,
-  schedTTL0:  60*1000,
-  schedTTLOld:5*60*1000,
+/* =============== API helpers con TTL (fusionado, sin redeclarar) ========================== */
+if (!window.API) window.API = {};
+Object.assign(API, {
+  dirTTL:      (CONFIG.DIR_TTL_MS || API.dirTTL || 5*60*1000),
+  schedTTL0:   (API.schedTTL0   || 60*1000),
+  schedTTLOld: (API.schedTTLOld || 5*60*1000),
 
   async getDirectory(controller){
     const local  = await loadLocalDirectory(controller?.signal);
@@ -174,11 +175,11 @@ const API = {
   },
 
   async getSchedule(email, offset=0, controller){
-    const ttl = offset===0 ? API.schedTTL0 : API.schedTTLOld;
-    const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}&offset=${offset}`;
+    const ttl = offset===0 ? (API.schedTTL0||60000) : (API.schedTTLOld||300000);
+    const u = `${CONFIG.BASE_URL}?action=getSmartSchedule&email=${encodeURIComponent(email)}${offset?`&offset=${offset}`:''}`;
     return fetchJSON(u, { ttl, signal: controller?.signal });
   }
-};
+});
 
 /* =================== LOGIN =================== */
 async function loginUser() {

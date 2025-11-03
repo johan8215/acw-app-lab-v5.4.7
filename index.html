@@ -44,6 +44,13 @@
       </div>
     </div>
   </div>
+  <!-- ====== Dentro de .settings-section ====== -->
+<button onclick="openRegModal()">➕ Add / Update Employee (local)</button>
+<button onclick="triggerImportDirectory()">📥 Import Directory (.json/.csv)</button>
+<button onclick="exportDirectoryJSON()">📤 Export Directory (.json)</button>
+<button onclick="clearLocalDirectory()">🧹 Clear Local Directory</button>
+
+<input id="dirImportInput" type="file" accept=".json,.csv" style="display:none" onchange="onImportDirectoryFile(this)">
 
   <button class="gear-btn" aria-label="Settings" onclick="openSettings()">⚙️</button>
 

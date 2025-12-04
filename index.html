@@ -5,17 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Allston Car Wash — Blue Glass White Edition</title>
 
-  <!-- 📱 PWA META -->
   <link rel="manifest" href="manifest.json" />
   <meta name="theme-color" content="#ffffff" />
 
-  <!-- 🎨 Styles -->
   <link rel="stylesheet" href="style.css" />
 </head>
 
 <body>
 
-  <!-- 🔐 LOGIN SCREEN -->
   <div id="login" class="container glass">
     <h1>ALLSTON CAR WASH</h1>
     <input id="email" type="email" placeholder="Email" autocomplete="email" />
@@ -24,7 +21,6 @@
     <p id="diag" class="error"></p>
   </div>
 
-  <!-- 👋 WELCOME DASHBOARD -->
   <div id="welcome" class="container glass" style="display:none;">
     <h2 id="welcomeName"></h2>
     <p id="welcomeRole"></p>
@@ -33,10 +29,8 @@
     <p id="totalHours" class="total"></p>
   </div>
 
-<!-- ⚙️ SETTINGS BUTTON -->
 <button id="settingsBtn" class="gear-btn" onclick="openSettings()">⚙️</button>
 
-<!-- ⚙️ SETTINGS MODAL -->
 <div id="settingsModal" class="modal" style="display:none;">
   <div class="modal-content glass">
     <span class="close" onclick="closeSettings()">×</span>
@@ -55,7 +49,6 @@
   </div>
 </div>
 
-<!-- 🔑 CHANGE PASSWORD MODAL -->
 <div id="changePasswordModal" class="modal" style="display:none;">
   <div class="modal-content glass">
     <span class="close" onclick="closeChangePassword()">×</span>
@@ -69,17 +62,14 @@
     </div>
   </div>
 </div>
-  <!-- 🧾 FOOTER -->
   <footer class="hud bottom-center">
     Powered by <b>JAG15</b> | Allston Car Wash © 2025<br>
-    <small>v5.6.2 — Blue Glass White Edition</small>
+    <small>v5.6.3 — Modularized Edition</small>
   </footer>
 
-  <!-- 🧠 CORE SCRIPTS -->
   <script src="./config.js"></script>
-  <script src="./app.js"></script>
+  <script src="./api.js"></script>  <script src="./app.js"></script>
 
-  <!-- 🧩 SERVICE WORKER -->
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("./service-worker.js")
@@ -88,7 +78,6 @@
     }
   </script>
 
-  <!-- 📲 INSTALL HANDLER -->
   <script>
     const installBtn = document.getElementById("installToPhoneBtn");
     const tip = document.getElementById("installTip");

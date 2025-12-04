@@ -1,11 +1,15 @@
-// ===========================================================
-// 🧠 ACW-App Config v5.6.2 — Blue Glass White Connected Edition
-// Johan A. Giraldo (JAG15) | Allston Car Wash © 2025
-// ===========================================================
+// ============================================================
+// 🧠 ACW-App Config v5.6.3 — Modularized Edition
+// Johan A. Giraldo (JAG15) & Sky — Dec 2025 (Improved by Gemini)
+// ============================================================
 
 const CONFIG = {
+  // 🌐 URL de tu Web App de Google Apps Script (Reemplaza con tu URL)
   BASE_URL: "https://script.google.com/macros/s/AKfycbx-6DqfjydMMGp-K2z8FeBSH9t8Z1Ooa0Ene0u917RK7Eo6vu80aOTLmCf7lJtm-Ckh/exec".trim(),
-  VERSION: "v5.6.2 — Blue Glass White Connected Edition"
+  VERSION: "v5.6.3 — Modularized Edition",
+
+  // 🔐 Roles con permisos de gestión (centralizado para consistencia)
+  MANAGER_ROLES: ["manager", "supervisor"], 
 };
 
 // 🔁 Asegura visibilidad global
